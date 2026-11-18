@@ -1,0 +1,165 @@
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+Visualization Manager:
+  Displays:
+  - Class: rviz_default_plugins/Map
+    Name: Measured map
+    Enabled: true
+    Value: true
+    Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /pinky1/map
+    Color Scheme: map
+    Alpha: 1.0
+    Draw Behind: true
+    Use Timestamp: false
+  - Class: rviz_common/Group
+    Name: pinky1
+    Enabled: true
+    Displays:
+    - Class: rviz_default_plugins/Map
+      Name: Global costmap
+      Enabled: true
+      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /pinky1/global_costmap/costmap
+      Color Scheme: costmap
+      Alpha: 0.2
+      Draw Behind: false
+      Use Timestamp: false
+    - Class: rviz_default_plugins/Map
+      Name: Local costmap
+      Enabled: true
+      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /fleet_rviz/pinky1/local_costmap
+      Color Scheme: costmap
+      Alpha: 0.55
+      Draw Behind: false
+      Use Timestamp: false
+    - Class: rviz_default_plugins/Polygon
+      Name: Footprint
+      Enabled: true
+      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /fleet_rviz/pinky1/footprint
+      Color: 13; 166; 89
+      Alpha: 1.0
+    - Class: rviz_default_plugins/RobotModel
+      Name: Pinky Pro model
+      Enabled: true
+      Value: true
+      Description Source: Topic
+      Description Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /pinky1/robot_description
+      TF Prefix: pinky1
+      Visual Enabled: true
+      Collision Enabled: false
+      Alpha: 1
+  - Class: rviz_common/Group
+    Name: pinky2
+    Enabled: true
+    Displays:
+    - Class: rviz_default_plugins/Map
+      Name: Global costmap
+      Enabled: true
+      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /pinky2/global_costmap/costmap
+      Color Scheme: costmap
+      Alpha: 0.2
+      Draw Behind: false
+      Use Timestamp: false
+    - Class: rviz_default_plugins/Map
+      Name: Local costmap
+      Enabled: true
+      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /fleet_rviz/pinky2/local_costmap
+      Color Scheme: costmap
+      Alpha: 0.55
+      Draw Behind: false
+      Use Timestamp: false
+    - Class: rviz_default_plugins/Polygon
+      Name: Footprint
+      Enabled: true
+      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /fleet_rviz/pinky2/footprint
+      Color: 230; 89; 33
+      Alpha: 1.0
+    - Class: rviz_default_plugins/RobotModel
+      Name: Pinky Pro model
+      Enabled: true
+      Value: true
+      Description Source: Topic
+      Description Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /pinky2/robot_description
+      TF Prefix: pinky2
+      Visual Enabled: true
+      Collision Enabled: false
+      Alpha: 1
+  - Class: rviz_default_plugins/MarkerArray
+    Name: Robot names
+    Enabled: true
+    Value: true
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /fleet_rviz/robots
+  Global Options:
+    Fixed Frame: map
+    Background Color: 235; 237; 240
+    Frame Rate: 30
+  Tools:
+  - Class: rviz_default_plugins/Interact
+  - Class: rviz_default_plugins/MoveCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Fleet map
+      Angle: 0
+      Scale: 265
+      X: 1.413
+      Y: -0.244
+Window Geometry:
+  Width: 1240
+  Height: 800
