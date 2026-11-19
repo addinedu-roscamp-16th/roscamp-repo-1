@@ -11,7 +11,10 @@ setup(
     install_requires=['setuptools'], zip_safe=True,
     maintainer='OneTeam', maintainer_email='oneteam@example.com',
     description='FryBot bringup',
-    entry_points={'console_scripts': ['fleet_rviz = frybot_bringup.fleet_rviz:main',
-                                    'robot_remote = frybot_bringup.robot_remote:main']}, 
+    # [수정 2026-11-19] T-40: wait_online 추가(로봇 온라인 뒤 RViz 시작)
+    entry_points={'console_scripts': [
+        'fleet_rviz = frybot_bringup.fleet_rviz:main',
+        'robot_remote = frybot_bringup.robot_remote:main',
+        'wait_online = frybot_bringup.wait_online:main']},
     license='Apache-2.0',
 )

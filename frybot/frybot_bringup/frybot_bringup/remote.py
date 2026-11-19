@@ -47,10 +47,21 @@ def pick_robots(arg, reg):
     return list(reg) or robot_ids(1)
 
 
-def fleet_rviz_config(robot_ids):
+# [수정 2026-11-19] hide_displays 추가: 화면 녹화용으로 왼쪽 Displays 창
+# 없이 띄움 (RViz 메뉴 Panels > Add New Panel > Displays 로 다시 열 수 있음).
+# 설정의 "Hide Left Dock" 은 창이 뜨기 전에 적용돼 듣지 않아 쓰지 않음
+def fleet_rviz_config(robot_ids, hide_displays: bool = False):
     """RViz config for exactly these robots, made from rviz/fleet.rviz (which is written for pinky1 and pinky2):
     one display group per robot (global / local costmap, footprint, model) and one "2D Pose Estimate" tool per robot
-    (in robot order) that publishes on /<robot>/initialpose for that robot's AMCL."""
+    (in robot order) that publishes on /<robot>/initialpose for that robot's AMCL.
+
+    Args:
+        robot_ids: 표시할 로봇 이름 목록.
+        hide_displays: True 면 왼쪽 Displays 창 없이 띄운다.
+
+    Returns:
+        만든 설정 파일의 경로.
+    """
     import tempfile
     from ament_index_python.packages import get_package_share_directory
     # [수정 2026-11-18] P2: RViz 설정 이름 fleet_real.rviz -> fleet.rviz
@@ -67,6 +78,9 @@ def fleet_rviz_config(robot_ids):
     before, after = tail.split(tools, 1)
     out = head.replace('pinky1', robot_ids[0]) + ''.join(group.replace('pinky1', rid) for rid in robot_ids) + \
         before + tools + after.replace('  Views:\n', pose + '  Views:\n', 1)
+    if hide_displays:
+        out = out.replace('Panels:\n- Class: rviz_common/Displays\n'
+                          '  Name: Displays\n', 'Panels: []\n', 1)
     path = os.path.join(tempfile.mkdtemp(prefix='frybot_fleet_rviz_'), 'fleet.rviz')
     with open(path, 'w') as stream:
         stream.write(out)

@@ -194,6 +194,9 @@ ros2 run frybot_sim scenario --scenario demo        # 다른 터미널: 자동 �
 | `scheduler` | `min_cost_eta_rh` | `min_cost`, `min_cost_eta`, `min_cost_eta_rh`, `priority_greedy`, `fifo_nearest` |
 | `planner` | `sipp` | `sipp`, `ccbs`, `cooperative_astar`, `independent_astar` |
 | `rviz` | `true` | RViz 표시 |
+| `map_id` (`fleet_rviz.launch.py`) | 없음 | RViz만 따로 띄울 때 그 지도의 로드맵(노드·통로·이름)도 그림. `real.launch.py`는 자기 `map_id`로 항상 그림 |
+| `rviz_displays` | `true` (실기기) | `false`면 RViz 왼쪽의 Displays 창 없이 띄움(화면 녹화용). `fleet_rviz.launch.py`에도 같은 인자가 있음 |
+| `rviz_wait`, `rviz_wait_sec` | `false`, `120` (실기기) | `true`면 로봇이 모두 상태를 보고한 뒤(또는 120초 뒤)에 RViz를 띄움. 실기기에서 RViz가 뜬 직후 상태 보고가 4~8초 끊긴 적이 있어 기본은 꺼 둠(T-40) |
 | `net` | `sim` (시뮬) | `sim`: 시뮬 전용 도메인(`sim_domain`, 기본 74). `local`: 탐색을 이 PC로 제한(Gazebo에서는 Nav2가 주행하지 못함, T-29). `lan`: 실기기와 같은 도메인(예전 기본값) |
 | `admin_token` | 없음 (실기기) | 관제 PC가 아닌 기기에서 관리자 명령을 보낼 때 쓰는 토큰. 비워 두면 관리자 명령은 관제 PC에서만 받음 |
 | `discovery` | `peers` (실기기) | 로봇은 자기 안과 관제 PC만 탐색하고 로봇끼리는 탐색하지 않음. `subnet`은 예전처럼 같은 대역 전체를 탐색(로봇이 늘면 기동이 크게 느려짐, T-38). 실기기 확인 필요 |
@@ -224,7 +227,9 @@ ros2 run frybot_sim scenario --scenario demo        # 다른 터미널: 자동 �
 | --- | --- |
 | `proto` | 가상 매장 도면(200×100 cm). `layout.py`에서 만든 파일이며, 치수나 로드맵을 바꾸면 `ros2 run frybot_control export_map --proto`로 다시 만듦 |
 | `test_map_v001` | 실측 지도 1번 |
-| `test_map_v002` | 실측 지도 2번. v001과 같은 지도 이미지에 로드맵을 줄인 것 (편집 중) |
+| `test_map_v002` | 실측 지도 2번. v001과 같은 지도 이미지에 로드맵을 줄인 것(노드 34 → 20, 2026-11-19 편집 완료) |
+| `test_map_v03` | 실측 지도 3번(2026-11-19). 지도 이미지를 새로 만든 것. 노드 40, 통로 41 |
+| `test_map_v04` | 실측 지도 4번(2026-11-19). v03과 같은 통로에 노드를 줄인 것(노드 20, 통로 21). A·B 통로의 노드 번호가 v03과 다름 |
 
 폴더에는 파일 세 개를 둡니다.
 
@@ -270,10 +275,10 @@ ros2 run frybot_bringup robot_remote --all --stop
 - 원격 기동은 로봇의 DDS 탐색을 로봇 안과 관제 PC로 제한하고(`discovery:=peers`가 기본), 실측 지도에서는 도킹 노드(`docking_server`, `aruco_dock_detector`)를 띄우지 않습니다(2026-11-18, T-38, 실기기 확인 필요).
 - 위치가 잡힌 로봇은 자기 출발 노드(`homes`)로 한 번 스스로 이동합니다(`auto_home:=false`로 끔, 실기기 확인 필요).
 - 초기 자세는 `poses:=`로 주거나, RViz의 **2D Pose Estimate**로 지정합니다. 로봇 런치에는 `initial_pose:="x y yaw"`(미터, 라디안)를 넘길 수 있습니다.
-- `real.launch.py`는 모든 로봇의 전역·지역 코스트맵이 켜진 RViz를 함께 띄웁니다. `rviz:=false`로 띄웠다면 `ros2 launch frybot_bringup fleet_rviz.launch.py`로 따로 볼 수 있습니다.
+- `real.launch.py`는 모든 로봇의 전역·지역 코스트맵이 켜진 RViz를 띄웁니다. 세 대를 함께 띄우면 관제 연결이 2~3분 걸립니다(T-40, 미해결). `rviz:=false`로 띄웠다면 `ros2 launch frybot_bringup fleet_rviz.launch.py robots:=pinky1,pinky2,pinky3`로 따로 볼 수 있습니다(`robots`를 비우면 등록된 로봇 전부).
 - 관리자 화면의 운영 지도에서 로봇과 목적 노드를 고르고 **이동 명령**을 누르면, 관제가 경로와 통행 허가를 보내고 Pinky가 Nav2로 구간을 주행합니다.
 
-준비 절차와 단계별 검증은 [docs/REAL_ROBOT_GUIDE.md](../../docs/REAL_ROBOT_GUIDE.md), 양보·노드 복귀·비상 정지 채널은 [docs/CHANGES_2026-11-16.md](../../docs/CHANGES_2026-11-16.md)에 있습니다.
+준비 절차와 단계별 검증은 [docs/REAL_ROBOT_GUIDE.md](../../docs/REAL_ROBOT_GUIDE.md), 양보·노드 복귀·비상 정지 채널은 [docs/2026-11-16_CHANGES.md](../../docs/2026-11-16_CHANGES.md)에 있습니다.
 
 ## 결과 확인
 
@@ -320,7 +325,7 @@ ros2 run frybot_control fleet_bench --scenario bottleneck --seeds 3 --schedulers
 - `--time-model measured`(구간마다 2.27초 + 거리 ÷ 0.135 m/s, 11-16 실기기 로그에서 맞춘 값), `--overhead`, `--exec-speed`, `--jitter 0.2`(구간 시간 0.8~1.2배), `--plan-speed`(관제의 일반 속도, 런치의 `speed:=`와 같음. 계획은 이 값 × 0.9), `--plan-guide-speed`(관제의 안내 속도, 기본 0.05), `--plan-speed-factor`(계획 속도 배율, 기본 0.9), `--plan-overhead`(관제의 계획 구간 지연)로 실행 조건을 바꿉니다(2026-11-18 W10: `--plan-speed`가 안내 속도까지 바꾸던 것을 고침). 결과의 `eta_ratio`는 계획 ETA 대비 실제 소요 비율의 중앙값입니다.
 - `--baseline "fifo_nearest independent_astar"`는 같은 씨앗끼리 짝지어 기준선과의 차이를 냅니다. `--check`는 전부 완료, 계획에 없는 정지가 30초 넘게 이어진 경우 0건, 의도된 대기(계획상 출발 전·비켜 선 뒤 대기·팔 작업)가 20초 넘게 이어진 경우 0건(2026-11-18 추가, 종류별 `intended20_plan`·`intended20_yield`·`intended20_arm`, 참고로 `unplanned20`·`intended30`·`intended_wait_max`), 같은 목적지의 계획 실패가 20초 넘게 이어진 경우 0건, 최소 간격 0.155 m 이상을 판정하고, 못 넘으면 종료 코드 1을 돌려줍니다.
 - 실측 지도: `--scenario moves --map-id test_map_v001 --robots 2`는 씨앗으로 정한 이동 명령을 로봇이 한가해질 때마다 넣습니다. 배정 차이는 나오지 않고 경로 계획만 비교됩니다.
-- `--csv`는 씨앗당 한 줄, `--csv-mean`은 조합별 평균(예전 `--csv` 형식)입니다. `--jobs N`으로 병렬 실행합니다. `--only-seed N`은 씨앗 하나만 다시 돌리고, `--no-standby`는 임무가 없는 로봇을 항상 충전대로 돌려보내며, `--max-t`는 모의 시간 상한(초, 기본 1500, `measured`는 3000), `--verbose`는 상세 출력입니다. 2026-11-18 비교 결과는 `archive/mock_compare_2026-11/`와 `docs/IMPROVEMENT_PLAN_2026-11-18.md` 9장에 있습니다.
+- `--csv`는 씨앗당 한 줄, `--csv-mean`은 조합별 평균(예전 `--csv` 형식)입니다. `--jobs N`으로 병렬 실행합니다. `--only-seed N`은 씨앗 하나만 다시 돌리고, `--no-standby`는 임무가 없는 로봇을 항상 충전대로 돌려보내며, `--max-t`는 모의 시간 상한(초, 기본 1500, `measured`는 3000), `--verbose`는 상세 출력입니다. 2026-11-18 비교 결과는 `archive/mock_compare_2026-11/`와 `docs/2026-11-18_IMPROVEMENT_PLAN.md` 9장에 있습니다.
 
 Open-RMF 비교용 플래너 `rmf`, `rmf_nego`와 스케줄러 `rmf_task`는 도우미를 빌드한 경우에만 목록에 나타납니다.
 

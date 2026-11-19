@@ -29,6 +29,9 @@ from nav2_msgs.srv import ClearEntireCostmap
 from rclpy.action import ActionClient
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
+# [수정 2026-11-19] T-41: 기본 QoS 이벤트 처리기를 끄는 데 씀
+from rclpy.event_handler import PublisherEventCallbacks
+from rclpy.event_handler import SubscriptionEventCallbacks
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.time import Time
@@ -52,6 +55,11 @@ from .sim_backend import SimBackend  # [수정 2026-11-18] P3(D6)
 
 QOS = QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST)
 
+# [수정 2026-11-19] T-41: QoS·타입 불일치 경고(rclpy 기본 이벤트 처리기)를
+# 남겨 둘 토픽. 나머지 발행·구독에서는 끔. 처리기가 발행·구독마다 2개씩
+# 붙어 실행기가 돌 때마다 확인하느라 Pinky 의 CPU 를 코어 절반 넘게 썼음
+EVENT_TOPICS = ('/fms/heartbeat', '/fms/traffic_grant')
+
 
 def wrap(a):
     return (a + math.pi) % (2 * math.pi) - math.pi
@@ -60,6 +68,47 @@ def wrap(a):
 # [수정 2026-11-18] P2(D2): 클래스·노드 이름을 실행 파일과 같게(예전 Amr, amr)
 class MobileController(Node):
     """AMR 한 대의 제어기(NavigateRoute·ArmJob 액션, 상태 보고)."""
+
+    # [수정 2026-11-19] T-41: 발행·구독을 만드는 두 메서드를 감싸 기본 QoS
+    # 이벤트 처리기를 끔. TF 수신(TransformListener)과 sim_backend 가 이
+    # 노드에 만드는 것에도 같이 적용됨. 송수신 동작은 바뀌지 않음
+    def create_publisher(self, msg_type, topic: str, qos_profile, **kwargs):
+        """발행자를 만든다. EVENT_TOPICS 가 아니면 기본 이벤트 처리기를 끈다.
+
+        Args:
+            msg_type: 메시지 타입.
+            topic: 토픽 이름.
+            qos_profile: QoS 프로파일 또는 깊이.
+            **kwargs: Node.create_publisher 의 나머지 인자.
+
+        Returns:
+            만들어진 발행자.
+        """
+        if topic not in EVENT_TOPICS:
+            kwargs.setdefault('event_callbacks', PublisherEventCallbacks(
+                use_default_callbacks=False))
+        return super().create_publisher(msg_type, topic, qos_profile,
+                                        **kwargs)
+
+    def create_subscription(self, msg_type, topic: str, callback,
+                            qos_profile, **kwargs):
+        """구독을 만든다. EVENT_TOPICS 가 아니면 기본 이벤트 처리기를 끈다.
+
+        Args:
+            msg_type: 메시지 타입.
+            topic: 토픽 이름.
+            callback: 메시지를 받는 콜백.
+            qos_profile: QoS 프로파일 또는 깊이.
+            **kwargs: Node.create_subscription 의 나머지 인자.
+
+        Returns:
+            만들어진 구독.
+        """
+        if topic not in EVENT_TOPICS:
+            kwargs.setdefault('event_callbacks', SubscriptionEventCallbacks(
+                use_default_callbacks=False))
+        return super().create_subscription(msg_type, topic, callback,
+                                           qos_profile, **kwargs)
 
     def __init__(self):
         super().__init__('mobile_controller')

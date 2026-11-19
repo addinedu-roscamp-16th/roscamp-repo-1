@@ -27,11 +27,23 @@ Ctrl-C stops both sides.
       peers: 로봇은 자기 안과 관제 PC 만 탐색하고, 관제 PC 는 로봇들을
       탐색 상대로 지정함(로봇끼리는 서로 탐색하지 않음).
       subnet: 예전처럼 같은 대역 전체를 탐색(로봇이 늘면 기동이 느려짐)
+  rviz_wait:=true  [수정 2026-11-19] T-40: 기본 false(예전처럼 곧바로 띄움).
+      true: 런치에 든 로봇이 모두 상태를 보고한 뒤(또는 rviz_wait_sec 초,
+      기본 120 뒤)에 RViz 를 띄움. poses:= 가 없는 로봇이 있으면 초기
+      자세를 RViz 에서 찍어야 하므로 기다리지 않음.
+      실기기 시험(C4)에서 RViz 가 뜬 직후 상태 보고가 4~8초 끊겼고 그때
+      로봇이 자동 홈 이동 중이었음. 그래서 기본으로 켜지 않음
+  rviz_displays:=false  [수정 2026-11-19] 기본 true. false 면 RViz 왼쪽의
+      Displays 창 없이 띄움(화면 녹화용). RViz 메뉴 Panels > Add New
+      Panel > Displays 로 다시 열 수 있음
   admin_token:=<값>  [수정 2026-11-17] D6: 관제 PC 가 아닌 기기에서 관리자 명령을 보낼 때 쓰는 토큰.
                    비워 두면(기본) 관리자 명령은 관제 PC(localhost)에서만 받음
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironmentVariable
+# [수정 2026-11-19] T-40: 로봇 온라인 뒤 RViz 시작에 씀
+from launch.actions import LogInfo, RegisterEventHandler
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration as LC
 from launch_ros.actions import Node
 
@@ -82,12 +94,14 @@ def setup(context):
     # [수정 2026-11-18] T-30: remote 인데 등록부가 없으면 안내 로그
     if g('remote') != 'false':
         nodes += registry_notice(g('robots_file'))
+    # [수정 2026-11-19] T-40: 출발 위치를 한 번만 계산해 아래 두 곳에서 씀
+    poses = start_poses(g('poses'), map_id)
     if reg:                                    # robot side of every registered robot, over SSH
         # [수정 2026-11-18] map:= 인자를 지움(사용자 결정). 다른 yaml 을
         # 끼우면 roadmap.json 과 지도 이미지가 어긋남. 필요하면 maps/ 에
         # 새 map_id 로 추가
         nodes += remote_bringup(robots, map_id, robots_file=g('robots_file'),
-                                poses=start_poses(g('poses'), map_id),
+                                poses=poses,
                                 discovery=discovery)
         # [수정 2026-11-18] T-38: 관제 PC 노드가 로봇을 직접 찾도록 로봇
         # 주소를 탐색 상대로 지정(터미널에 있던 값은 앞에 유지). 노드보다
@@ -96,10 +110,36 @@ def setup(context):
             nodes.insert(1, SetEnvironmentVariable(
                 'ROS_STATIC_PEERS', static_peers(robots, reg)))
     if g('rviz') == 'true':
-        config = fleet_rviz_config(robots)     # costmaps + one 2D Pose Estimate tool per robot
-        nodes += [Node(package='frybot_bringup', executable='fleet_rviz', output='screen',
-                       parameters=[{'robot_ids': robots}]),
-                  Node(package='rviz2', executable='rviz2', output='screen', arguments=['-d', str(config)])]
+        # [수정 2026-11-19] rviz_displays:=false 면 Displays 창 없이 띄움
+        config = fleet_rviz_config(
+            robots, hide_displays=g('rviz_displays') == 'false')
+        # [수정 2026-11-19] map_id 를 넘겨 로드맵(노드·통로)도 그리게 함
+        views = [Node(package='frybot_bringup', executable='fleet_rviz',
+                      output='screen', parameters=[{'robot_ids': robots,
+                                                    'map_id': map_id}]),
+                 Node(package='rviz2', executable='rviz2', output='screen',
+                      arguments=['-d', str(config)])]
+        # [수정 2026-11-19] T-40: RViz 를 로봇 온라인 뒤에 띄움. 실측 지도의
+        # 로봇은 위치가 잡혀야 상태를 보고하므로, poses 가 없는 로봇이
+        # 있으면(RViz 에서 초기 자세를 찍어야 함) 기다리지 않음
+        no_pose = [rid for rid in robots if rid not in poses]
+        if g('rviz_wait') != 'true':
+            nodes += views
+        elif no_pose:
+            nodes += [LogInfo(msg=f'poses 가 없는 로봇 {no_pose}: RViz 를 '
+                                  '기다리지 않고 바로 띄웁니다.')] + views
+        else:
+            waiter = Node(package='frybot_bringup', executable='wait_online',
+                          output='screen',
+                          parameters=[{'robot_ids': robots, 'timeout_sec':
+                                       float(g('rviz_wait_sec'))}])
+
+            def start_views(event, context):
+                # 런치를 내리는 중(Ctrl-C)에 끝난 것이면 띄우지 않음
+                return None if context.is_shutdown else views
+
+            nodes += [waiter, RegisterEventHandler(OnProcessExit(
+                target_action=waiter, on_exit=start_views))]
     return nodes
 
 
@@ -111,6 +151,12 @@ def generate_launch_description():
             ('auto_home', 'true'), ('admin_token', ''),
             # [수정 2026-11-18] T-38: 로봇·관제의 DDS 탐색 범위
             ('discovery', 'peers'),
+            # [수정 2026-11-19] T-40: RViz 를 로봇 온라인 뒤에 띄울지와
+            # 기다리는 시간 제한(초). 실기기 시험(C4)에서 RViz 가 뜬 직후
+            # 주행 중인 로봇의 상태 보고가 4~8초 끊겨 기본은 false
+            ('rviz_wait', 'false'), ('rviz_wait_sec', '120'),
+            # [수정 2026-11-19] false 면 RViz 의 Displays 창 없이 띄움(녹화용)
+            ('rviz_displays', 'true'),
             # [수정 2026-11-18] W6: 계획의 구간 지연(초). 기본 0.0. 보정값
             # (plan_overhead:=2.27 speed:=0.135)은 실기기 확인 필요
             ('plan_overhead', '0.0')]
