@@ -64,7 +64,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** WEB-01 방문 등록 (입구 접수) */
+        /**
+         * WEB-01 방문 등록 (입구 접수)
+         * @description Confluence "01) WEB-01 방문 접수" 기준.
+         *     같은 request_key·같은 입력으로 다시 보내면 처음 결과를 그대로 돌려줍니다(새 방문을 만들지 않음).
+         */
         post: operations["createVisit"];
         delete?: never;
         options?: never;
@@ -79,7 +83,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** WEB-02 방문 상태 조회 (안내 진행·주문 포함 스냅샷) */
+        /**
+         * WEB-02 방문 상태 조회 (안내 진행·주문 포함 스냅샷)
+         * @description Confluence "02) WEB-02 방문 상태 조회" 기준. 화면 진입·재접속·상태 누락 때 한 번 조회.
+         *     order_id를 주면 그 주문이 이 방문에 속할 때만 상세를 담음(다른 방문의 주문은 반환하지 않음).
+         */
         get: operations["getVisit"];
         put?: never;
         post?: never;
@@ -715,8 +723,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description ASSIGNED(테이블 배정) 또는 WAITING(대기 번호) */
-            200: {
+            /** @description ASSIGNED(테이블 배정 확정) 또는 WAITING(가용 테이블 없음, 대기 허용) — 방문 1건 생성 */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -724,14 +732,41 @@ export interface operations {
                     "application/json": components["schemas"]["CreateVisitResponse"];
                 };
             };
-            400: components["responses"]["Error"];
-            409: components["responses"]["Error"];
-            503: components["responses"]["Error"];
+            /** @description VISIT_NOT_ALLOWED(영업·대기 정책상 접수 불가) 또는 REQUEST_KEY_CONFLICT(같은 키·다른 입력) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description INVALID_INPUT (입력 오류) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description RESULT_UNCONFIRMED (처리 결과를 확정할 수 없음 — 같은 키로 다시 보내 원결과 대조) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getVisit: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 선택 주문 ID */
+                order_id?: string;
+            };
             header?: never;
             path: {
                 visit_id: components["parameters"]["VisitId"];
