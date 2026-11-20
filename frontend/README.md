@@ -15,7 +15,8 @@
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173 (같은 와이파이의 태블릿에서도 접속 가능)
+npm run dev          # 가짜 데이터로 보기 — http://localhost:5173 (같은 와이파이의 태블릿에서도 접속 가능)
+npm run dev:server   # 진짜 백엔드 서버에 붙여 보기 (주소는 .env.server 의 BACKEND_URL)
 npm test           # 흐름 테스트
 npm run build      # dist/ 에 배포용 파일
 ```
@@ -56,7 +57,9 @@ src/
 ## 백엔드 연결 (FastAPI + rclpy)
 
 Confluence **1) FryBot I/F 목록**(2026-11-20 설계 검토안)을 따릅니다.
-`VITE_API_MODE=http npm run dev` 로 실행하면 `/api/*` 요청이 `http://localhost:8000` 으로 넘어갑니다.
+`npm run dev:server` 로 실행하면 가짜 데이터 대신 `/api/*` 요청이 백엔드로 넘어갑니다(WebSocket `/api/ws` 포함).
+백엔드 주소는 `frontend/.env.server` 의 `BACKEND_URL` 한 줄만 고치면 됩니다 (기본 `http://localhost:8000`).
+배포용 파일은 `npm run build:server`.
 JSON 필드는 `src/api/contract.ts`에 있습니다. 문서가 "확인 필요"로 남긴 형식은 `[제안]`으로 표시했습니다.
 
 | I/F | 경로 | 화면 |
