@@ -1,4 +1,5 @@
 import { BrowserRouter, Link, Route, Routes, useParams } from 'react-router-dom'
+import { AdminApp } from './admin/AdminApp'
 import { KioskApp } from './kiosk/KioskApp'
 import { tableSpec } from './api/storeLayout'
 import { TableApp } from './table/TableApp'
@@ -7,7 +8,7 @@ import { TableApp } from './table/TableApp'
  * 기기별 화면을 주소로 나눕니다.
  *   /kiosk         입구 키오스크 (K1~K4)
  *   /table/:id     테이블 태블릿 (T1~T5)
- *   /admin         관리자 PC (A1~A3) — 준비 중
+ *   /admin         관리자 PC — A1 통합 관제, /admin/tables A2, /admin/alarms A3
  */
 export default function App() {
   return (
@@ -16,7 +17,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/kiosk" element={<KioskApp />} />
         <Route path="/table/:tableId" element={<TableRoute />} />
-        <Route path="/admin" element={<Placeholder title="관리자 PC (A1~A3)" />} />
+        <Route path="/admin/*" element={<AdminApp />} />
         <Route path="*" element={<Placeholder title="없는 주소예요" />} />
       </Routes>
     </BrowserRouter>
@@ -28,7 +29,9 @@ function Home() {
     { to: '/kiosk', label: '입구 키오스크', note: 'K1~K4' },
     { to: '/kiosk?robot=busy', label: '입구 키오스크 · 로봇 대기 흐름', note: 'K1→K2→K3→K4' },
     { to: '/table/3', label: '테이블 태블릿 (3번 테이블)', note: 'T1~T5' },
-    { to: '/admin', label: '관리자 PC', note: 'A1~A3 · 준비 중' },
+    { to: '/admin', label: '관리자 PC · 통합 관제', note: 'A1' },
+    { to: '/admin/tables', label: '관리자 PC · 테이블·주문', note: 'A2' },
+    { to: '/admin/alarms', label: '관리자 PC · 알람·이력', note: 'A3' },
   ]
   return (
     <main style={{ maxWidth: 560, margin: '0 auto', padding: '48px 16px' }}>

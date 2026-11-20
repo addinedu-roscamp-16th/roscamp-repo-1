@@ -85,3 +85,122 @@ export function guideRoute(id: number): [number, number][] | null {
 export function tableName(id: number | null | undefined) {
   return id == null ? '-' : `${id}번`
 }
+
+/* ── 관리자 지도(A1·A3)용: frybot_control/layout.py 와 같은 값 ── */
+
+export type Pt = [number, number]
+type Box = readonly [number, number, number, number]
+
+/** 충전대 (CH1~CH3) 칸과, AMR이 서는 점 */
+export const CHARGERS: { id: string; rect: Box; dock: Pt }[] = [
+  { id: 'CH1', rect: [0, 13, 12, 27], dock: [6, 20] },
+  { id: 'CH2', rect: [0, 43, 12, 57], dock: [6, 50] },
+  { id: 'CH3', rect: [0, 73, 12, 87], dock: [6, 80] },
+]
+/** 음식 받는 곳: 튀김(위), 웍(아래) */
+export const PICKUPS = { FRY: [183, AISLE_U] as Pt, WOK: [183, AISLE_L] as Pt }
+/** 비켜 서는 곳(벽쪽 테이블 사이)과 조리 구역 옆 대기 칸 */
+export const BAYS: Box[] = [
+  [72, 1, 116, 11],
+  [72, 89, 116, 99],
+]
+export const STANDBY: Box[] = [
+  [150, 1, 164, 11],
+  [150, 89, 164, 99],
+]
+/** 조리 로봇팔은 벽 밖 조리대에 있음 */
+export const COOK_ARMS = { FRY: [214, AISLE_U] as Pt, WOK: [214, AISLE_L] as Pt }
+
+/** AMR id(pinky1~3)의 집(충전대) */
+export function homeOf(robotId: string): Pt {
+  const i = Math.max(0, Number(robotId.replace(/\D/g, '')) - 1)
+  return CHARGERS[i % CHARGERS.length].dock
+}
+
+/** 지도 좌표(m, y 위쪽) ↔ 매장 좌표(cm, y 아래쪽) */
+export const toMap = ([x, y]: Pt): Pt => [x / 100, (STORE_H - y) / 100]
+export const fromMap = (x: number, y: number): Pt => [x * 100, STORE_H - y * 100]
+
+/** 통로 중심선을 따라가는 길 그래프 (layout.py build_roadmap 과 같은 모양, 가운데 테이블은 위쪽 정차점만) */
+function buildRoadmap() {
+  const key = ([x, y]: Pt) => `${x}_${y}`
+  const nodes = new Map<string, Pt>()
+  const adj = new Map<string, string[]>()
+  const link = (a: Pt, b: Pt) => {
+    for (const p of [a, b]) {
+      if (nodes.has(key(p))) continue
+      nodes.set(key(p), p)
+      adj.set(key(p), [])
+    }
+    adj.get(key(a))!.push(key(b))
+    adj.get(key(b))!.push(key(a))
+  }
+  const line = (pts: Pt[]) => pts.slice(1).forEach((p, i) => link(pts[i], p))
+  const U = AISLE_U
+  const L = AISLE_L
+  const GAP_R = 153
+  const xs = [22, 38, 54, 74, 88, 101, 114, 131, GAP_R, 166, 183]
+  line(xs.map((x) => [x, U]))
+  line(xs.map((x) => [x, L]))
+  line([20, U, 50, L, 80, 92].map((y) => [22, y]))
+  for (const x of [38, 101, GAP_R]) line([[x, U], [x, 50], [x, L]])
+  line([[22, 50], [38, 50]])
+  line([[GAP_R, 50], [166, 50], [183, 50]])
+  line([8, U, 50, L, 92].map((y) => [183, y]))
+  line([[88, U], [88, 6], [114, 6], [114, U]])
+  line([[88, L], [88, 94], [114, 94], [114, L]])
+  line([[GAP_R, U], [157, 6]])
+  line([[GAP_R, L], [157, 94]])
+  for (const t of TABLES) line([[t.stop[0], t.stop[1] < 50 ? U : L], t.stop])
+  for (const c of CHARGERS) line([c.dock, [22, c.dock[1]]])
+  return { nodes, adj, key }
+}
+const ROADMAP = buildRoadmap()
+
+/** 두 점 사이 길(cm 꼭짓점). 출발·도착은 가장 가까운 길 위 점으로 붙임 */
+export function roadPath(from: Pt, to: Pt): Pt[] {
+  const { nodes, adj, key } = ROADMAP
+  const near = (p: Pt) => {
+    let best = ''
+    let bd = Infinity
+    for (const [k, n] of nodes) {
+      const d = Math.hypot(n[0] - p[0], n[1] - p[1])
+      if (d < bd) {
+        bd = d
+        best = k
+      }
+    }
+    return best
+  }
+  const s = near(from)
+  const g = near(to)
+  const dist = new Map([[s, 0]])
+  const prev = new Map<string, string>()
+  const open = new Set([s])
+  while (open.size) {
+    let u = ''
+    let ud = Infinity
+    for (const k of open) {
+      if (dist.get(k)! < ud) {
+        ud = dist.get(k)!
+        u = k
+      }
+    }
+    open.delete(u)
+    if (u === g) break
+    const [ux, uy] = nodes.get(u)!
+    for (const v of adj.get(u)!) {
+      const [vx, vy] = nodes.get(v)!
+      const nd = ud + Math.hypot(vx - ux, vy - uy)
+      if (nd >= (dist.get(v) ?? Infinity)) continue
+      dist.set(v, nd)
+      prev.set(v, u)
+      open.add(v)
+    }
+  }
+  const out: Pt[] = []
+  for (let k: string | undefined = g; k; k = prev.get(k)) out.unshift(nodes.get(k)!)
+  if (out[0] && key(out[0]) !== key(from)) out.unshift(from)
+  if (key(out[out.length - 1]) !== key(to)) out.push(to)
+  return out
+}

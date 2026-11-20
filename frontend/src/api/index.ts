@@ -1,7 +1,11 @@
+import type { AdminApi } from './adminContract'
+import { createHttpAdminApi } from './adminHttp'
+import { createMockAdminApi } from './adminMock'
 import type { FrybotApi } from './contract'
 import { createHttpApi } from './httpApi'
 import { createMockApi } from './mockApi'
 
+export * from './adminContract'
 export * from './contract'
 export { tableName } from './storeLayout'
 
@@ -22,4 +26,12 @@ export function getApi(): FrybotApi {
     shared = createMockApi({ robotAvailable: params.get('robot') !== 'busy', autoSeat: true })
   }
   return shared
+}
+
+let sharedAdmin: AdminApi | null = null
+
+/** 관리자 화면(A1~A3)용 API. 가짜 모드에서는 지난 25분을 미리 돌려 둔 가짜 매장 */
+export function getAdminApi(): AdminApi {
+  sharedAdmin ??= import.meta.env.VITE_API_MODE === 'http' ? createHttpAdminApi() : createMockAdminApi()
+  return sharedAdmin
 }
