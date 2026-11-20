@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>GUI 화면 구성도 개요</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1d4ed8}a:hover{color:#1e3a8a}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1040px; box-sizing: border-box; padding: 56px 64px; background: #F7F8FA; color: #151821; font-family: 'Noto Sans KR', system-ui, sans-serif; display: flex; flex-direction: column; gap: 36px;">
+
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 24px;">
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 14px; font-weight: 500; color: #4B5468;">다중 로봇 협업 기반 스마트 레스토랑 자동화 시스템 · OneTeam</div>
+      <h1 style="margin: 0; font-size: 40px; font-weight: 700; letter-spacing: -0.5px;">GUI 화면 구성도 <span style="color: #1d4ed8;">초안 v0.1</span></h1>
+    </div>
+    <div style="font-size: 14px; color: #4B5468; text-align: right; line-height: 1.6;">작성 2026-11-09 · FE 김예지슬<br>근거: UR-01~23, SR-001~038, 멘토링 일지_1, 로보월드 관제 사례</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px;">
+    <sc-for list="{{devices}}" as="d" hint-placeholder-count="3">
+      <div style="background: #FFFFFF; border: 1px solid #DDE1E8; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 40px; height: 40px; border-radius: 10px; background: #151821; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px;">{{d.code}}</div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="font-size: 20px; font-weight: 700;">{{d.name}}</div>
+            <div style="font-size: 13px; color: #4B5468;">{{d.device}}</div>
+          </div>
+        </div>
+        <div style="font-size: 14px; color: #3A4152; line-height: 1.6;">{{d.desc}}</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <sc-for list="{{d.screens}}" as="s" hint-placeholder-count="4">
+            <div style="display: flex; gap: 12px; align-items: baseline; padding: 10px 12px; background: #F3F5F8; border-radius: 8px;">
+              <div style="font-size: 13px; font-weight: 700; color: #1d4ed8; min-width: 36px;">{{s.id}}</div>
+              <div style="flex-grow: 1; font-size: 15px; font-weight: 500;">{{s.name}}</div>
+              <div style="font-size: 12px; color: #4B5468; text-align: right;">{{s.sr}}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; flex-grow: 1;">
+    <div style="background: #FFFFFF; border: 1px solid #DDE1E8; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 14px;">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 700;">로보월드 레퍼런스에서 가져온 것</h2>
+      <sc-for list="{{refs}}" as="r" hint-placeholder-count="5">
+        <div style="display: flex; gap: 16px; font-size: 14px; line-height: 1.5;">
+          <div style="min-width: 150px; font-weight: 700; color: #151821;">{{r.src}}</div>
+          <div style="color: #3A4152;">{{r.take}}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #DDE1E8; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 14px;">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 700;">팀 결정이 필요한 것 (TBD)</h2>
+      <sc-for list="{{tbd}}" as="t" hint-placeholder-count="5">
+        <div style="display: flex; gap: 12px; font-size: 14px; line-height: 1.5;">
+          <div style="min-width: 22px; height: 22px; border-radius: 11px; background: #FFF1E6; color: #9A3412; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{t.n}}</div>
+          <div style="color: #3A4152;"><b style="color: #151821;">{{t.q}}</b> — {{t.why}}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      devices: [
+        { code: 'A', name: '관리자 관제', device: '관리자 디바이스 · 웹 브라우저 (PC)', desc: '로봇 위치·상태, 임무, 테이블·주문, 알람을 한 화면에서 보고 수동 개입하는 운영 화면. 다크 테마, 지도 중심.',
+          screens: [
+            { id: 'A0', name: '로그인', sr: 'Test Plan T-01' },
+            { id: 'A1', name: '통합 관제 (모니터링)', sr: 'SR-030·033·034·035' },
+            { id: 'A2', name: '테이블 · 주문 · 조리 현황', sr: 'SR-029·031·032' },
+            { id: 'A3', name: '알람 · 이력 (Replay)', sr: 'SR-008·036·037·038' }
+          ] },
+        { code: 'K', name: '입구 접수', device: '접수 디바이스 · 키오스크 (태블릿)', desc: '손님이 인원수를 입력하면 테이블을 배정하고 안내 AMR을 호출. 큰 버튼, 단계 최소화.',
+          screens: [
+            { id: 'K1', name: '인원 선택', sr: 'SR-001' },
+            { id: 'K2', name: '테이블 배정 결과', sr: 'SR-002·003·004' },
+            { id: 'K3', name: '안내 로봇 대기', sr: 'SR-005 (대기)' },
+            { id: 'K4', name: '안내 시작', sr: 'SR-006·007' }
+          ] },
+        { code: 'T', name: '테이블 주문', device: '테이블 디바이스 · 태블릿 (테이블 ID 고정)', desc: '메뉴 선택부터 주문 확정, 조리·서빙 진행 상태, 음식 도착, 이용 종료까지.',
+          screens: [
+            { id: 'T1', name: '메뉴 선택', sr: 'SR-009·010' },
+            { id: 'T2', name: '주문 확인 · 확정', sr: 'SR-011·012' },
+            { id: 'T3', name: '진행 상태 (+도착 예정 시각)', sr: 'SR-013 · ML' },
+            { id: 'T4', name: '음식 도착 안내', sr: 'SR-025·026' },
+            { id: 'T5', name: '이용 종료', sr: 'SR-027·028' }
+          ] }
+      ],
+      refs: [
+        { src: 'Syscon Robotics', take: '다크 테마 · 상단 연결 상태(LIVE / Connected) · 왼쪽 대상 목록(상태 점 + 모드 + 배터리 바) · 지도 위 로봇 라벨과 점선 예정 경로' },
+        { src: 'CSL (HAMR)', take: '상단 상태 요약 카운트(주행·대기·충전·이상·수신 지연) · 로봇 상세 패널(목적지, 주문 ID, x·y·θ, 속도) · 작업 단계 진행 표시' },
+        { src: 'romni Edge (KAON)', take: '오른쪽 로봇 카드 + 유형/상태/배터리 필터 · 지도 위 작업 지점 핀(pick / drop / wait) · 2D·3D 전환(우리는 2D 우선)' },
+        { src: 'X-UP FMS', take: '하단 타임라인 스크러버 + 재생 속도 1x/2x/4x(Replay) · 이벤트 시간순 목록 · 전방 카메라 인셋 · 이상 없음/미션 요약' },
+        { src: '공통', take: '지도와 목록 연동(목록에서 고르면 지도에서 강조) · 알람은 장치·코드·시각·관련 작업을 한 줄로' }
+      ],
+      tbd: [
+        { n: '1', q: '웹 ↔ ROS 연동 방식', why: 'rosbridge(WebSocket)로 직접 받을지, 웹 서비스가 HTTP/WebSocket으로 중계할지. 실시간 갱신 방식이 여기서 정해짐' },
+        { n: '2', q: '지도 원본', why: 'SA의 매장 맵 이미지를 배경으로 쓸지, 노드·경로 좌표 데이터로 그릴지 (본 초안 지도는 자리표시)' },
+        { n: '3', q: '관제 카메라 영상', why: '지도 인셋으로 둘지 별도 탭으로 둘지. UDP 영상 지연 측정 결과에 따라 결정' },
+        { n: '4', q: '접수·주문 기기', why: '태블릿 1종인지, 키오스크/태블릿 해상도가 다른지 (멘토: 지원 기기를 정확히 표기)' },
+        { n: '5', q: '도착 예정 시각 표시', why: 'ML 예측 모델(Colab 학습 후보)이 들어오기 전까지 T3에 고정값/규칙 기반으로 표시할지' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

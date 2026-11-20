@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>매장 맵 탑뷰 3D</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#8AB8FF}a:hover{color:#C2DAFF}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+
+  <div style="{{barStyle}}">
+    <span style="{{mutedText}}">지도</span>
+    <b style="font-size: 13px;">중앙 섬 배치 · 200×100 cm</b>
+    <div style="{{segStyle}}" role="group" aria-label="보기 방식">
+      <button onClick="{{setTop}}" style="{{topBtn}}">탑뷰</button>
+      <button onClick="{{set3d}}" style="{{threeBtn}}">3D</button>
+    </div>
+    <button onClick="{{togglePlay}}" style="{{playBtn}}" aria-label="{{playAria}}">{{playLabel}}</button>
+    <div style="flex-grow: 1;"></div>
+    <sc-for list="{{chips}}" as="c" hint-placeholder-count="5">
+      <button onClick="{{c.pick}}" style="{{c.style}}"><span style="{{c.dot}}" aria-hidden="true"></span>{{c.label}}</button>
+    </sc-for>
+  </div>
+
+  <div style="{{viewportStyle}}">
+    <div style="{{stageStyle}}">
+
+      <sc-for list="{{zones}}" as="z" hint-placeholder-count="6">
+        <div style="{{z.style}}"><span style="{{z.labelStyle}}">{{z.label}}</span></div>
+      </sc-for>
+
+      <svg style="position: absolute; left: 0; top: 0; overflow: visible; transform: translateZ(1px);" width="{{svgW}}" height="{{svgH}}" aria-hidden="true">
+        <line x1="{{lane.x1}}" y1="{{lane.yUp}}" x2="{{lane.x2}}" y2="{{lane.yUp}}" stroke="{{laneColor}}" stroke-width="1.5" stroke-dasharray="6 5"></line>
+        <line x1="{{lane.x1}}" y1="{{lane.yMid}}" x2="{{lane.x2}}" y2="{{lane.yMid}}" stroke="{{laneColor}}" stroke-width="1.5" stroke-dasharray="6 5"></line>
+        <sc-for list="{{routes}}" as="r" hint-placeholder-count="4">
+          <polyline points="{{r.points}}" fill="none" stroke="{{r.color}}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity="{{r.opacity}}"></polyline>
+        </sc-for>
+      </svg>
+
+      <sc-for list="{{stops}}" as="s" hint-placeholder-count="9">
+        <div style="{{s.style}}"></div>
+        <div style="{{s.labelStyle}}">{{s.label}}</div>
+      </sc-for>
+
+      <sc-for list="{{boxes}}" as="b" hint-placeholder-count="20">
+        <div style="{{b.wrap}}">
+          <div style="{{b.back}}"></div>
+          <div style="{{b.left}}"></div>
+          <div style="{{b.right}}"></div>
+          <div style="{{b.front}}"></div>
+          <div style="{{b.top}}"><span style="{{b.labelStyle}}">{{b.label}}</span><span style="{{b.subStyle}}">{{b.sub}}</span></div>
+        </div>
+      </sc-for>
+
+      <sc-if value="{{is3d}}" hint-placeholder-val="{{ true }}">
+      <sc-for list="{{bills}}" as="c" hint-placeholder-count="3">
+        <div style="{{c.style}}">
+          <div style="display: flex; align-items: center; gap: 6px;"><span style="{{c.dot}}" aria-hidden="true"></span><b style="font-size: 14px;">{{c.title}}</b><span style="{{c.stateStyle}}">{{c.state}}</span></div>
+          <div style="font-size: 12px; color: #E7EAF0;">{{c.order}}</div>
+          <div style="height: 6px; border-radius: 3px; background: #2A3142; overflow: hidden;"><div style="{{c.bar}}"></div></div>
+          <div style="font-size: 11px; color: #A3ACBD;">{{c.step}}</div>
+        </div>
+      </sc-for>
+      </sc-if>
+
+      <div style="{{entranceStyle}}">입구 ↓</div>
+    </div>
+
+    <div style="{{legendStyle}}">
+      <span><b style="color: #B79CFF;">●</b> AMR-1 안내</span>
+      <span><b style="color: #4ADE80;">●</b> AMR-2 서빙</span>
+      <span><b style="color: #9CA3AF;">●</b> AMR-3 대기</span>
+    </div>
+
+    <sc-if value="{{isTop}}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; left: 14px; bottom: 46px; display: flex; gap: 8px; align-items: flex-end;" aria-label="조리 구역 상태">
+        <sc-for list="{{dockBills}}" as="c" hint-placeholder-count="2">
+          <div style="{{c.dockStyle}}">
+            <div style="display: flex; align-items: center; gap: 6px;"><span style="{{c.dot}}" aria-hidden="true"></span><b style="font-size: 14px;">{{c.title}}</b><span style="{{c.stateStyle}}">{{c.state}}</span></div>
+            <div style="font-size: 12px; color: #E7EAF0;">{{c.order}}</div>
+            <div style="height: 6px; border-radius: 3px; background: #2A3142; overflow: hidden;"><div style="{{c.bar}}"></div></div>
+            <div style="font-size: 11px; color: #A3ACBD;">{{c.step}}</div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <div style="{{camStyle}}">
+      <div style="display: flex; justify-content: space-between; padding: 8px 10px; font-size: 11px; color: #E7EAF0;"><span>탑뷰 관제 카메라 · YOLO</span><span style="color: #FF8A78;">● LIVE</span></div>
+      <div style="position: relative; flex-grow: 1; margin: 0 10px 10px; border-radius: 6px; overflow: hidden; background: #3A3B3D;" role="img" aria-label="탑뷰 카메라 임시 화면: 매장 전체와 로봇, YOLO 탐지 박스">
+        <div style="position: absolute; left: 5px; top: 2px; width: 210px; height: 105px; box-sizing: border-box; border: 2px solid #1E1F21; background: #8E9196;"></div>
+        <div style="position: absolute; left: 7px; top: 4px; width: 13px; height: 101px; background: #8A97AA;"></div>
+        <div style="position: absolute; left: 179px; top: 4px; width: 34px; height: 101px; background: #A39687;"></div>
+        <div style="position: absolute; left: 41px; top: 10px; width: 21px; height: 15px; background: #6E5442; border-radius: 1px;"></div>
+        <div style="position: absolute; left: 70px; top: 10px; width: 21px; height: 15px; background: #6E5442; border-radius: 1px;"></div>
+        <div style="position: absolute; left: 103px; top: 10px; width: 44px; height: 15px; background: #6E5442; border-radius: 1px;"></div>
+        <div style="position: absolute; left: 158px; top: 10px; width: 21px; height: 15px; background: #6E5442; border-radius: 1px;"></div>
+        <div style="position: absolute; left: 59px; top: 84px; width: 44px; height: 15px; background: #6E5442; border-radius: 1px;"></div>
+        <div style="position: absolute; left: 114px; top: 84px; width: 21px; height: 15px; background: #6E5442; border-radius: 1px;"></div>
+        <div style="position: absolute; left: 144px; top: 84px; width: 21px; height: 15px; background: #6E5442; border-radius: 1px;"></div>
+        <div style="position: absolute; left: 42px; top: 62px; width: 10px; height: 10px; border-radius: 5px; background: #2B2C30; border: 1.5px solid #D9D9D9;"></div>
+        <div style="position: absolute; left: 158px; top: 38px; width: 10px; height: 10px; border-radius: 5px; background: #2B2C30; border: 1.5px solid #D9D9D9;"></div>
+        <div style="position: absolute; left: 8px; top: 50px; width: 10px; height: 10px; border-radius: 5px; background: #2B2C30; border: 1.5px solid #D9D9D9;"></div>
+        <div style="position: absolute; left: 154px; top: 34px; width: 18px; height: 18px; box-sizing: border-box; border: 1.5px solid #22FF88;"></div>
+        <div style="position: absolute; left: 154px; top: 24px; padding: 0 2px; background: #22FF88; color: #062012; font-size: 7px; line-height: 10px; font-weight: 700;">pinky 0.76</div>
+        <div style="position: absolute; left: 38px; top: 58px; width: 18px; height: 18px; box-sizing: border-box; border: 1.5px solid #22FF88;"></div>
+        <div style="position: absolute; left: 101px; top: 8px; width: 48px; height: 19px; box-sizing: border-box; border: 1.5px solid #FFD43B;"></div>
+        <div style="position: absolute; left: 101px; top: 27px; padding: 0 2px; background: #FFD43B; color: #2B2100; font-size: 7px; line-height: 10px; font-weight: 700;">table 0.67</div>
+        <div style="position: absolute; left: 57px; top: 82px; width: 48px; height: 19px; box-sizing: border-box; border: 1.5px solid #FFD43B;"></div>
+        <div style="position: absolute; left: 57px; top: 72px; padding: 0 2px; background: #FFD43B; color: #2B2100; font-size: 7px; line-height: 10px; font-weight: 700;">table 0.59</div>
+        <div style="position: absolute; inset: 0; background: repeating-linear-gradient(0deg, #00000022 0 1px, transparent 1px 3px), radial-gradient(ellipse at center, transparent 55%, #000000AA 100%);"></div>
+        <div style="position: absolute; left: 4px; bottom: 3px; font-size: 8px; color: #FFFFFF; font-family: ui-monospace, monospace;">CAM-01 16:42:08 · 24fps</div>
+        <div style="position: absolute; right: 4px; bottom: 3px; font-size: 8px; color: #FFFFFF; font-family: ui-monospace, monospace;">임시 화면</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;},&quot;startView&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;3d&quot;,&quot;top&quot;],&quot;default&quot;:&quot;3d&quot;},&quot;showCamera&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false},&quot;mapW&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:1200,&quot;min&quot;:600,&quot;max&quot;:2000},&quot;mapH&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:760,&quot;min&quot;:450,&quot;max&quot;:1400},&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:760}}">
+class Component extends DCLogic {
+  componentDidMount() {
+    var self = this;
+    this._timer = setInterval(function () {
+      var s = self.state || {};
+      if (s.paused) return;
+      self.setState({ tick: (s.tick || 0) + 1 });
+    }, 50);
+  }
+  componentWillUnmount() {
+    if (this._timer) clearInterval(this._timer);
+  }
+  renderVals() {
+    var self = this;
+    var st = this.state || {};
+    var view = st.view || this.props.startView || '3d';
+    var route = st.route || '전체';
+    var dark = (this.props.theme || 'dark') === 'dark';
+    var S = 3.2;
+    var W = 232 * S, H = 100 * S;
+    var MW = this.props.mapW || 1200, MH = this.props.mapH || 760, VW = MW, VH = MH - 52;
+    var s3 = Math.min((VW - 40) / 808, (VH - 110) / 394);
+    var sTop = Math.min((VW - 32) / W, (VH - 160) / (H + 20));
+    var tyTop = 18 + H * sTop / 2 - VH / 2;
+
+    var P = dark ? {
+      bg: '#0F1218', bar: '#0F1218', border: '#2A3142', text: '#E7EAF0', muted: '#A3ACBD',
+      view: '#121620', floor: '#1C2230', grid: '#232A3A', wall: ['#4A5670', '#3A4560', '#2E374D'],
+      table: ['#8B6B55', '#6E5442', '#5C4536'], chair: ['#D9D2C7', '#B5ADA2', '#9C948A'],
+      charge: '#16263F', chargeLine: '#5B9BFF', pass: '#C2410C', kitchen: '#2A1E14', lane: '#5B9BFF', mid: '#3A4560',
+      bench: ['#C9CFDA', '#A3ACBD', '#8A93A5'], arm: ['#2DD4BF', '#14A394', '#0F8276'], stop: '#22C55E', segBg: '#171B24', segOn: '#26314A'
+    } : {
+      bg: '#FFFFFF', bar: '#FFFFFF', border: '#E1E4EA', text: '#1C1E24', muted: '#5A6375',
+      view: '#F1F3F6', floor: '#FBFBFC', grid: '#ECEEF2', wall: ['#D5DAE2', '#BFC6D1', '#AEB6C3'],
+      table: ['#8B6B55', '#6E5442', '#5C4536'], chair: ['#FFFFFF', '#E3E6EB', '#D2D6DD'],
+      charge: '#E6F0FF', chargeLine: '#2563EB', pass: '#C2410C', kitchen: '#FFF1E6', lane: '#2563EB', mid: '#C9CED8',
+      bench: ['#E9ECF1', '#D3D8E0', '#C3C9D3'], arm: ['#2DD4BF', '#14A394', '#0F8276'], stop: '#16A34A', segBg: '#F1F3F6', segOn: '#FFFFFF'
+    };
+    var C = { pick: '#F59E0B', serve: '#22C55E', guide: '#8B5CF6', back: dark ? '#9CA3AF' : '#6B7280' };
+
+    function box(o) {
+      var x = o.x * S, y = o.y * S, w = o.w * S, d = o.d * S, h = o.h;
+      var col = o.col;
+      var base = 'position: absolute; box-sizing: border-box; ';
+      return {
+        wrap: 'position: absolute; left: ' + x + 'px; top: ' + y + 'px; width: ' + w + 'px; height: ' + d + 'px; transform-style: preserve-3d;',
+        top: base + 'left: 0; top: 0; width: ' + w + 'px; height: ' + d + 'px; transform: translateZ(' + h + 'px); background: ' + col[0] + '; border-radius: ' + (o.r || 2) + 'px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;' + (o.ring ? ' box-shadow: 0 0 0 4px ' + o.ring + ';' : ''),
+        front: base + 'left: 0; top: ' + d + 'px; width: ' + w + 'px; height: ' + h + 'px; transform-origin: top; transform: rotateX(90deg); background: ' + col[1] + ';',
+        back: base + 'left: 0; top: ' + (-h) + 'px; width: ' + w + 'px; height: ' + h + 'px; transform-origin: bottom; transform: rotateX(-90deg); background: ' + col[1] + ';',
+        left: base + 'left: ' + (-h) + 'px; top: 0; width: ' + h + 'px; height: ' + d + 'px; transform-origin: right; transform: rotateY(90deg); background: ' + col[2] + ';',
+        right: base + 'left: ' + w + 'px; top: 0; width: ' + h + 'px; height: ' + d + 'px; transform-origin: left; transform: rotateY(-90deg); background: ' + col[2] + ';',
+        label: o.label || '', sub: o.sub || '',
+        labelStyle: 'font-size: ' + (o.fs || 11) + 'px; font-weight: 700; color: ' + (o.fg || '#FFFFFF') + '; white-space: nowrap; line-height: 1.1;',
+        subStyle: 'font-size: 9px; color: ' + (o.fg || '#FFFFFF') + '; opacity: 0.85; white-space: nowrap; line-height: 1.1;'
+      };
+    }
+
+    var boxes = [];
+    var walls2 = [
+      { id: '1번', x: 47, y: 1 }, { id: '2번', x: 127, y: 1 },
+      { id: '5번', x: 47, y: 88.6 }, { id: '6번', x: 127, y: 88.6 }
+    ];
+    walls2.forEach(function (t) {
+      boxes.push(box({ x: t.x - 6.6, y: t.y + 0.4, w: 6.2, d: 9.6, h: 5, col: P.chair, r: 3 }));
+      boxes.push(box({ x: t.x + 14.4, y: t.y + 0.4, w: 6.2, d: 9.6, h: 5, col: P.chair, r: 3 }));
+      boxes.push(box({ x: t.x, y: t.y, w: 14, d: 10.4, h: 14, col: P.table, label: t.id, sub: '2인', fs: 11 }));
+    });
+    [{ id: '3번', x: 62 }, { id: '4번', x: 114 }].forEach(function (t) {
+      [t.x + 1.2, t.x + 13.8].forEach(function (cx) {
+        boxes.push(box({ x: cx, y: 37, w: 11, d: 5.6, h: 5, col: P.chair, r: 3 }));
+        boxes.push(box({ x: cx, y: 57.8, w: 11, d: 5.6, h: 5, col: P.chair, r: 3 }));
+      });
+      boxes.push(box({ x: t.x, y: 43.2, w: 26, d: 14, h: 14, col: P.table, label: t.id + ' 테이블', sub: '4인', fs: 12 }));
+    });
+    boxes.push(box({ x: -2, y: -2, w: 202, d: 2, h: 14, col: P.wall }));
+    boxes.push(box({ x: -2, y: 100, w: 202, d: 2, h: 14, col: P.wall }));
+    boxes.push(box({ x: -2, y: 0, w: 2, d: 100, h: 14, col: P.wall }));
+    boxes.push(box({ x: 200, y: -2, w: 4, d: 104, h: 22, col: ['#2A2A2E', '#1C1C20', '#121214'] }));
+    [13, 43, 73].forEach(function (cy, i) {
+      boxes.push(box({ x: 2, y: cy + 2, w: 8, d: 10, h: 4, col: [P.chargeLine, '#1D4ED8', '#1E40AF'], label: '⚡' + (i + 1), fs: 10 }));
+    });
+    boxes.push(box({ x: 208, y: 10, w: 9, d: 80, h: 16, col: P.bench, label: '조리대', fg: P.text, fs: 9 }));
+    boxes.push(box({ x: 215, y: 19, w: 12, d: 12, h: 30, col: ['#22C55E', '#15803D', '#166534'], label: '튀김', sub: '조리 중', fs: 10, r: 4, ring: '#22C55E66' }));
+    boxes.push(box({ x: 215, y: 69, w: 12, d: 12, h: 30, col: ['#22C55E', '#15803D', '#166534'], label: '웍', sub: '조리 중', fs: 10, r: 4, ring: '#22C55E66' }));
+    var secs = (st.tick || 0) * 0.05;
+    function along(p, f) {
+      var seg = [], total = 0;
+      for (var i = 1; i < p.length; i++) { var l = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]); seg.push(l); total += l; }
+      var dist = f * total;
+      for (var j = 0; j < seg.length; j++) {
+        if (dist <= seg[j] || j === seg.length - 1) { var k = seg[j] ? Math.min(1, dist / seg[j]) : 0; return [p[j][0] + (p[j + 1][0] - p[j][0]) * k, p[j][1] + (p[j + 1][1] - p[j][1]) * k]; }
+        dist -= seg[j];
+      }
+      return p[p.length - 1];
+    }
+    function progress(period, hold, offset) {
+      var t = (secs + offset) % (period + hold);
+      var f = Math.min(1, t / period);
+      return f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2;
+    }
+    var g = along([[21.8, 20], [34, 21], [72, 26], [75, 29.5]], progress(7, 1.5, 0));
+    var v = along([[184, 75.3], [164, 76.3], [136, 76.3], [134, 81.7]], progress(6, 1.5, 2));
+    boxes.push(box({ x: g[0] - 5, y: g[1] - 5, w: 10, d: 10, h: 12, col: ['#8B5CF6', '#6D28D9', '#5B21B6'], label: '1', sub: '안내', fs: 11, r: 5, ring: '#8B5CF655' }));
+    boxes.push(box({ x: v[0] - 5, y: v[1] - 5, w: 10, d: 10, h: 12, col: ['#22C55E', '#15803D', '#166534'], label: '2', sub: '서빙', fs: 11, r: 5, ring: '#22C55E55' }));
+    boxes.push(box({ x: 152.5, y: 1, w: 10, d: 10, h: 12, col: ['#9CA3AF', '#6B7280', '#4B5563'], label: '3', sub: '대기', fs: 11, r: 5 }));
+
+    function zone(x, y, w, d, extra, label, lc) {
+      return { style: 'position: absolute; box-sizing: border-box; left: ' + x * S + 'px; top: ' + y * S + 'px; width: ' + w * S + 'px; height: ' + d * S + 'px; ' + extra, label: label || '',
+        labelStyle: 'position: absolute; left: 4px; bottom: 3px; font-size: 9px; font-weight: 700; color: ' + (lc || P.muted) + '; white-space: nowrap;' };
+    }
+    var zones = [
+      zone(0, 0, 200, 100, 'background-color: ' + P.floor + '; background-image: linear-gradient(' + P.grid + ' 1px, transparent 1px), linear-gradient(90deg, ' + P.grid + ' 1px, transparent 1px); background-size: ' + 10 * S + 'px ' + 10 * S + 'px;', ''),
+      zone(0, 0, 12, 100, 'background: ' + P.charge + ';', '충전 구역', P.chargeLine),
+      zone(12.2, 0.6, 19.4, 98.8, 'border: 1.5px dashed ' + P.pass + '; border-radius: 4px;', '충전대 앞 통로', P.pass),
+      zone(166, 0, 34, 100, 'background: ' + P.kitchen + ';', '조리 구역 · 1대씩', P.pass),
+      zone(40, 0.6, 28, 11, 'background: ' + (dark ? '#2A2620' : '#EFEBE3') + '; border-radius: 3px;', ''),
+      zone(120, 0.6, 28, 11, 'background: ' + (dark ? '#2A2620' : '#EFEBE3') + '; border-radius: 3px;', ''),
+      zone(40, 88, 28, 11.6, 'background: ' + (dark ? '#2A2620' : '#EFEBE3') + '; border-radius: 3px;', ''),
+      zone(120, 88, 28, 11.6, 'background: ' + (dark ? '#2A2620' : '#EFEBE3') + '; border-radius: 3px;', ''),
+      zone(62, 36, 26, 28, 'background: ' + (dark ? '#2A2620' : '#EFEBE3') + '; border-radius: 3px;', ''),
+      zone(114, 36, 26, 28, 'background: ' + (dark ? '#2A2620' : '#EFEBE3') + '; border-radius: 3px;', ''),
+      zone(70, 0.8, 48, 10.8, 'border: 1.5px dashed #22C55E; border-radius: 4px; background: #22C55E14;', '비켜 서는 곳', '#16A34A'),
+      zone(70, 88.4, 48, 11, 'border: 1.5px dashed #22C55E; border-radius: 4px; background: #22C55E14;', '비켜 서는 곳', '#16A34A'),
+      zone(149.8, 0.8, 15.4, 10.8, 'border: 1.5px dashed #22C55E; border-radius: 4px; background: #22C55E14;', '대기', '#16A34A'),
+      zone(149.8, 88.4, 15.4, 11, 'border: 1.5px dashed #22C55E; border-radius: 4px; background: #22C55E14;', '대기', '#16A34A'),
+      zone(88.6, 36.7, 24.8, 26.8, 'border: 1.5px dashed ' + P.lane + '; border-radius: 4px;', '연결 통로', P.lane),
+      zone(17.8, 2.6, 8, 8, 'border-radius: 50%; background: ' + C.guide + '33;', ''),
+      zone(17.3, 15.5, 9, 9, 'border: 2px dashed ' + C.guide + '; border-radius: 50%;', ''),
+      zone(13, 25, 19, 6, '', '손님 맞이', C.guide),
+      zone(180, 20.9, 8, 8, 'border: 2px solid ' + C.pick + '; border-radius: 50%;', ''),
+      zone(180, 71.3, 8, 8, 'border: 2px solid ' + C.pick + '; border-radius: 50%; background: ' + C.pick + '; box-shadow: 0 0 0 4px ' + C.pick + '55;', ''),
+      zone(166, 30, 34, 6, '', '튀김 받는 곳', C.pick),
+      zone(166, 81, 34, 6, '', '볶음밥 받는 곳 · 2개 대기', C.pick),
+      zone(34, 25.5, 30, 5, '', '위 통로 · 폭 24', P.lane),
+      zone(140, 69, 26, 5, '', '아래 통로 · 폭 24', P.lane)
+    ];
+
+    function pts(arr) { return arr.map(function (p) { return (p[0] * S) + ',' + (p[1] * S); }).join(' '); }
+    var R = [
+      { key: '픽업', color: C.pick, p: [[11.6, 50], [18.6, 50], [18.6, 24], [184, 24.9]] },
+      { key: '픽업', color: C.pick, p: [[184, 24.9], [184, 75.3]] },
+      { key: '서빙', color: C.serve, p: [[184, 24.9], [164, 24], [80, 24], [75, 29.5]] },
+      { key: '서빙', color: C.serve, p: [[184, 75.3], [164, 76.3], [136, 76.3], [134, 81.7]] },
+      { key: '안내', color: C.guide, p: [[21.8, 20], [34, 21], [72, 26], [75, 29.5]] },
+      { key: '안내', color: C.guide, p: [[21.8, 20], [40, 19], [54, 18.5]] },
+      { key: '복귀', color: C.back, p: [[134, 81.7], [129.6, 74.9], [30.2, 74.9], [20.2, 80.1], [11.6, 80.1]] }
+    ];
+    var routes = R.map(function (r) { return { points: pts(r.p), color: r.color, opacity: (route === '전체' || route === r.key) ? '1' : '0.12' }; });
+
+    var stopList = [['1번', 54, 18.5], ['2번', 134, 18.5], ['3번 위', 75, 29.5], ['4번 위', 127, 29.5], ['3번 아래', 75, 70.7], ['4번 아래', 127, 70.7], ['5번', 54, 81.7], ['6번', 134, 81.7]];
+    var stops = stopList.map(function (s) {
+      return { label: s[0],
+        style: 'position: absolute; left: ' + (s[1] * S - 5) + 'px; top: ' + (s[2] * S - 5) + 'px; width: 10px; height: 10px; border-radius: 5px; background: ' + P.stop + '; transform: translateZ(2px);',
+        labelStyle: 'position: absolute; left: ' + (s[1] * S - 20) + 'px; top: ' + (s[2] * S + (s[2] < 50 ? -18 : 7)) + 'px; width: 40px; text-align: center; font-size: 9px; font-weight: 700; color: ' + P.stop + '; transform: translateZ(2px);' };
+    });
+
+    var chipDefs = [['전체', P.muted], ['픽업', C.pick], ['서빙', C.serve], ['안내', C.guide], ['복귀', C.back]];
+    var chips = chipDefs.map(function (c) {
+      var on = route === c[0];
+      return { label: c[0], pick: function () { self.setState({ route: c[0] }); },
+        style: 'height: 30px; padding: 0 10px; border-radius: 999px; display: flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; cursor: pointer; border: 1px solid ' + (on ? P.text : P.border) + '; background: ' + (on ? P.segOn : 'transparent') + '; color: ' + P.text + ';',
+        dot: 'width: 8px; height: 8px; border-radius: 4px; background: ' + c[1] + ';' };
+    });
+
+    var segBtn = function (on) { return 'height: 28px; padding: 0 14px; border: 0; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; background: ' + (on ? P.segOn : 'transparent') + '; color: ' + (on ? P.text : P.muted) + '; font-weight: ' + (on ? '700' : '400') + ';'; };
+    var is3d = view === '3d';
+    function bill(cx, cy, z, below, d) {
+      var lift = below ? 'translate(-70%, 14px)' : 'translate(' + (d[6] || -72) + '%, -100%) translateY(-10px)';
+      var t = 'translateZ(' + z + 'px) rotateZ(22deg) rotateX(-52deg) scale(' + (1 / s3).toFixed(3) + ') ' + lift;
+      return { title: d[0], state: d[1], order: d[2], step: d[3],
+        style: 'position: absolute; left: ' + cx * S + 'px; top: ' + cy * S + 'px; width: ' + (below ? 150 : 168) + 'px; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; display: flex; flex-direction: column; gap: 5px; background: #0F1218F2; border: 1.5px solid ' + d[4] + '; color: #E7EAF0; box-shadow: 0 6px 18px #00000066; transform-origin: 0 0; transition: transform 0.7s ease; transform: ' + t + ';',
+        dot: 'width: 9px; height: 9px; border-radius: 5px; background: ' + d[4] + ';',
+        stateStyle: 'margin-left: auto; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: ' + d[4] + '; color: #0F1218;',
+        bar: 'width: ' + d[5] + '%; height: 6px; background: ' + d[4] + ';',
+        dockStyle: 'width: 168px; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; display: flex; flex-direction: column; gap: 5px; background: #0F1218F2; border: 1.5px solid ' + d[4] + '; color: #E7EAF0;' };
+    }
+    var bills = [
+      bill(221, 25, 44, false, ['튀김 로봇팔', '조리 중', 'ORD-0012 · 치킨 1', '3/5 튀김 중 · 남은 2:10', '#22C55E', 60]),
+      bill(221, 75, 44, false, ['웍 로봇팔', '조리 중', 'ORD-0013 · 볶음밥 1', '2/4 볶는 중 · 남은 3:40', '#22C55E', 45])
+    ];
+
+    return {
+      rootStyle: 'width: ' + MW + 'px; height: ' + MH + 'px; box-sizing: border-box; display: flex; flex-direction: column; background: ' + P.bg + '; color: ' + P.text + '; font-family: \'Noto Sans KR\', system-ui, sans-serif;',
+      barStyle: 'height: 52px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid ' + P.border + '; background: ' + P.bar + '; font-size: 13px;',
+      mutedText: 'color: ' + P.muted + ';',
+      segStyle: 'display: flex; gap: 2px; padding: 3px; margin-left: 8px; border-radius: 8px; background: ' + P.segBg + ';',
+      topBtn: segBtn(!is3d), threeBtn: segBtn(is3d),
+      togglePlay: function () { self.setState({ paused: !st.paused }); },
+      playLabel: st.paused ? '▶ 재생' : '❚❚ 일시정지',
+      playAria: st.paused ? '로봇 이동 애니메이션 재생' : '로봇 이동 애니메이션 일시정지',
+      playBtn: 'height: 30px; padding: 0 12px; margin-left: 4px; border-radius: 8px; border: 1px solid ' + P.border + '; background: ' + P.segBg + '; color: ' + P.text + '; font: inherit; font-size: 12px; cursor: pointer;',
+      setTop: function () { self.setState({ view: 'top' }); },
+      set3d: function () { self.setState({ view: '3d' }); },
+      chips: chips,
+      viewportStyle: 'position: relative; flex-grow: 1; overflow: hidden; background: ' + P.view + '; perspective: 2000px; perspective-origin: 50% 40%;',
+      stageStyle: 'position: absolute; left: 50%; top: 50%; width: ' + W + 'px; height: ' + H + 'px; margin-left: ' + (-W / 2) + 'px; margin-top: ' + (-H / 2 + (is3d ? 24 : 0)) + 'px; transform-style: preserve-3d; transition: transform 0.7s ease; transform: ' + (is3d ? 'rotateX(52deg) rotateZ(-22deg) scale(' + s3.toFixed(3) + ')' : 'translateY(' + tyTop.toFixed(1) + 'px) scale(' + sTop.toFixed(3) + ')') + ';',
+      zones: zones, boxes: boxes, stops: stops, routes: routes, bills: bills, dockBills: bills.slice(0, 2), is3d: is3d, isTop: !is3d,
+      svgW: W, svgH: H,
+      lane: { x1: 32 * S, x2: 164 * S, yUp: 24 * S, yMid: 76.3 * S },
+      laneColor: P.lane, midColor: P.mid,
+      entranceStyle: 'position: absolute; left: ' + (22 * S - 20) + 'px; top: -26px; width: 40px; text-align: center; font-size: 11px; font-weight: 700; color: ' + C.guide + '; transform: translateZ(2px);',
+      legendStyle: 'position: absolute; right: 14px; bottom: 12px; display: flex; gap: 12px; padding: 6px 10px; border-radius: 8px; font-size: 11px; background: ' + (dark ? '#0F1218CC' : '#FFFFFFE6') + '; color: ' + P.text + ';',
+      camStyle: (this.props.showCamera !== true ? 'display: none;' : 'position: absolute; right: 14px; bottom: 12px; width: 240px; height: 150px; border-radius: 10px; background: #07090D; border: 1px solid #2A3142; display: flex; flex-direction: column;')
+    };
+  }
+}
+</script>
+</body>
+</html>

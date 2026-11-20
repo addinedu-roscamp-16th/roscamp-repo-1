@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>관리자 알람 이력</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#8AB8FF}a:hover{color:#C2DAFF}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; background: #0F1218; color: #E7EAF0; font-family: 'Noto Sans KR', system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 32px; padding: 0 20px; background: #171B24; border-bottom: 1px solid #2A3142;">
+    <div style="font-size: 17px; font-weight: 700;">OneTeam <span style="color: #8AB8FF;">관제</span></div>
+    <nav style="display: flex; gap: 4px; flex-grow: 1;" aria-label="관제 메뉴">
+      <a href="Admin_Monitoring.dc.html" style="padding: 8px 14px; border-radius: 8px; color: #A3ACBD; font-size: 14px; text-decoration: none;">통합 관제</a>
+      <a href="Admin_Tables.dc.html" style="padding: 8px 14px; border-radius: 8px; color: #A3ACBD; font-size: 14px; text-decoration: none;">테이블 · 주문</a>
+      <a href="Admin_Alarms.dc.html" style="padding: 8px 14px; border-radius: 8px; background: #26314A; color: #FFFFFF; font-size: 14px; font-weight: 500; text-decoration: none;">알람 · 이력</a>
+    </nav>
+    <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+      <span style="color: #A3ACBD;">모드</span><span style="padding: 4px 10px; border-radius: 999px; border: 1px solid #F5B942; color: #F5B942;">REPLAY</span>
+      <span style="margin-left: 6px; padding: 4px 10px; border-radius: 8px; background: #1E2330;">admin</span>
+    </div>
+  </header>
+
+  <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: 420px minmax(0, 1fr);">
+
+    <aside style="border-right: 1px solid #2A3142; display: flex; flex-direction: column; min-height: 0;" aria-label="알람 목록">
+      <div style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;"><h1 style="margin: 0; font-size: 18px; font-weight: 700;">알람</h1><span style="font-size: 12px; color: #A3ACBD;">미확인 2</span></div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 4px; background: #171B24; border-radius: 10px;">
+          <button style="height: 34px; border: 0; border-radius: 8px; background: #26314A; color: #FFFFFF; font: inherit; font-size: 13px;">전체</button>
+          <button style="height: 34px; border: 0; border-radius: 8px; background: transparent; color: #A3ACBD; font: inherit; font-size: 13px;">오류</button>
+          <button style="height: 34px; border: 0; border-radius: 8px; background: transparent; color: #A3ACBD; font: inherit; font-size: 13px;">경고</button>
+          <button style="height: 34px; border: 0; border-radius: 8px; background: transparent; color: #A3ACBD; font: inherit; font-size: 13px;">정보</button>
+        </div>
+      </div>
+      <sc-for list="{{alarms}}" as="a" hint-placeholder-count="6">
+        <div style="{{a.rowStyle}}">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="{{a.levelStyle}}">{{a.level}}</span>
+            <b style="font-size: 14px;">{{a.device}}</b>
+            <span style="font-size: 12px; color: #A3ACBD;">{{a.code}}</span>
+            <span style="margin-left: auto; font-size: 12px; color: #A3ACBD;">{{a.time}}</span>
+          </div>
+          <div style="font-size: 13px; color: #C9CFDA;">{{a.msg}}</div>
+        </div>
+      </sc-for>
+    </aside>
+
+    <main style="display: flex; flex-direction: column; min-width: 0; min-height: 0;">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid #2A3142; font-size: 13px; flex-wrap: wrap;">
+        <b style="font-size: 15px; margin-right: 8px;">운영 이력 조회</b>
+        <label style="display: flex; align-items: center; gap: 6px; color: #A3ACBD;">기간 <select style="height: 32px; border-radius: 8px; border: 1px solid #2A3142; background: #171B24; color: #E7EAF0; font: inherit; font-size: 13px; padding: 0 8px;"><option>오늘 11:00 ~ 17:00</option></select></label>
+        <label style="display: flex; align-items: center; gap: 6px; color: #A3ACBD;">작업 유형 <select style="height: 32px; border-radius: 8px; border: 1px solid #2A3142; background: #171B24; color: #E7EAF0; font: inherit; font-size: 13px; padding: 0 8px;"><option>전체 (주문·조리·안내·서빙·AMR)</option></select></label>
+        <label style="display: flex; align-items: center; gap: 6px; color: #A3ACBD;">처리 결과 <select style="height: 32px; border-radius: 8px; border: 1px solid #2A3142; background: #171B24; color: #E7EAF0; font: inherit; font-size: 13px; padding: 0 8px;"><option>전체</option></select></label>
+        <button style="height: 32px; padding: 0 14px; border-radius: 8px; border: 0; background: #2F6FEB; color: #FFFFFF; font: inherit; font-size: 13px;">조회</button>
+      </div>
+
+      <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: 380px minmax(0, 1fr);">
+        <section style="padding: 20px; border-right: 1px solid #2A3142; display: flex; flex-direction: column; gap: 14px;" aria-label="선택한 알람 상세">
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="padding: 3px 10px; border-radius: 999px; background: #3B1512; color: #FF8A78; font-size: 12px; font-weight: 700;">오류</span><b style="font-size: 17px;">ARM-3 · E-ARM-021</b></div>
+          <div style="font-size: 14px; line-height: 1.6; color: #C9CFDA;">그리퍼 파지 실패 — 음식 용기를 AMR 적재 공간에 배치하지 못함</div>
+          <div style="display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px 12px; font-size: 13px; background: #171B24; border-radius: 10px; padding: 14px;">
+            <span style="color: #A3ACBD;">발생 시각</span><span>16:12:47</span>
+            <span style="color: #A3ACBD;">장치</span><span>ARM-3 (적재 · 전달)</span>
+            <span style="color: #A3ACBD;">관련 주문</span><span>ORD-0008 · T2</span>
+            <span style="color: #A3ACBD;">관련 임무</span><span>M-015 서빙 (AMR-1)</span>
+            <span style="color: #A3ACBD;">실패 단계</span><span>적재 3/4 · 용기 파지</span>
+            <span style="color: #A3ACBD;">현재 상태</span><span style="color: #F5B942;">비상 정지 → 복구 대기</span>
+          </div>
+          <div style="font-size: 12px; color: #A3ACBD; line-height: 1.6;">재시도 전 확인: 그리퍼 주변 이물 제거 · 용기 위치 재정렬 · 장치 상태 정상</div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+            <button style="height: 44px; border-radius: 8px; border: 0; background: #2F6FEB; color: #FFFFFF; font: inherit; font-size: 14px; font-weight: 700;">재시도</button>
+            <button style="height: 44px; border-radius: 8px; border: 1px solid #3A4560; background: #1E2330; color: #E7EAF0; font: inherit; font-size: 14px;">작업 취소</button>
+          </div>
+          <a href="#replay" style="font-size: 13px;">이 시점 Replay 보기 →</a>
+        </section>
+
+        <section id="replay" style="display: flex; flex-direction: column; min-width: 0;" aria-label="Replay">
+          <div style="position: relative; flex-grow: 1; min-height: 0; background-color: #121620; background-image: linear-gradient(#1A2030 1px, transparent 1px), linear-gradient(90deg, #1A2030 1px, transparent 1px); background-size: 24px 24px; overflow: hidden;">
+            <div style="position: absolute; left: 16px; top: 14px; padding: 4px 10px; border-radius: 999px; background: #3A2E12; color: #F5B942; font-size: 12px;">● REPLAY · 16:12:40</div>
+            <div style="position: absolute; left: 40px; top: 60px; width: 520px; height: 80px; border: 1px dashed #3A4560; border-radius: 10px;"></div>
+            <div style="position: absolute; left: 60px; top: 74px; width: 120px; height: 52px; border-radius: 8px; background: #1E2330; border: 1px solid #3A4560; display: flex; align-items: center; justify-content: center; font-size: 12px;">ARM-1</div>
+            <div style="position: absolute; left: 230px; top: 74px; width: 120px; height: 52px; border-radius: 8px; background: #1E2330; border: 1px solid #3A4560; display: flex; align-items: center; justify-content: center; font-size: 12px;">ARM-2</div>
+            <div style="position: absolute; left: 400px; top: 74px; width: 120px; height: 52px; border-radius: 8px; background: #3B1512; border: 2px solid #FF7A66; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;">ARM-3 오류</div>
+            <svg style="position: absolute; left: 0; top: 0;" width="640" height="420" aria-hidden="true">
+              <polyline points="120,330 120,240 300,240 440,200 450,160" fill="none" stroke="#5B9BFF" stroke-width="2"></polyline>
+            </svg>
+            <div style="position: absolute; left: 434px; top: 150px; width: 32px; height: 32px; border-radius: 16px; background: #5B9BFF; color: #0F1218; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">1</div>
+            <div style="position: absolute; left: 472px; top: 156px; font-size: 11px; color: #8AB8FF;">AMR-1 적재 위치 정차</div>
+            <div style="position: absolute; left: 80px; top: 280px; width: 100px; height: 56px; border-radius: 8px; background: #1B2232; border: 1px solid #3A4560; display: flex; align-items: center; justify-content: center; font-size: 12px;">T2</div>
+            <div style="position: absolute; left: 240px; top: 280px; width: 100px; height: 56px; border-radius: 8px; background: #1B2232; border: 1px solid #3A4560; display: flex; align-items: center; justify-content: center; font-size: 12px;">T3</div>
+            <div style="position: absolute; right: 16px; top: 14px; font-size: 12px; color: #A3ACBD;">이동 궤적 실선 · 지도는 A1과 동일</div>
+          </div>
+
+          <div style="flex-shrink: 0; border-top: 1px solid #2A3142; padding: 14px 20px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <button aria-label="이전 이벤트" style="width: 36px; height: 36px; border-radius: 8px; border: 1px solid #2A3142; background: #171B24; color: #E7EAF0; font: inherit;">‹</button>
+              <button aria-label="재생" style="width: 44px; height: 36px; border-radius: 8px; border: 0; background: #2F6FEB; color: #FFFFFF; font: inherit;">▶</button>
+              <button aria-label="다음 이벤트" style="width: 36px; height: 36px; border-radius: 8px; border: 1px solid #2A3142; background: #171B24; color: #E7EAF0; font: inherit;">›</button>
+              <b style="font-size: 15px; margin-left: 6px;">16:12:40</b><span style="font-size: 12px; color: #A3ACBD;">/ 16:00 ~ 16:30</span>
+              <div style="flex-grow: 1;"></div>
+              <span style="font-size: 12px; color: #A3ACBD;">재생 속도</span>
+              <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 0; background: #26314A; color: #FFFFFF; font: inherit; font-size: 12px;">1x</button>
+              <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2A3142; background: transparent; color: #A3ACBD; font: inherit; font-size: 12px;">2x</button>
+              <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2A3142; background: transparent; color: #A3ACBD; font: inherit; font-size: 12px;">4x</button>
+            </div>
+            <div style="position: relative; height: 40px; border-radius: 8px; background: #171B24;">
+              <div style="position: absolute; left: 0; top: 0; width: 42%; height: 40px; border-radius: 8px 0 0 8px; background: #1E2A40;"></div>
+              <div style="position: absolute; left: 10%; top: 8px; width: 6px; height: 24px; border-radius: 3px; background: #5BE3A0;" title="주문 접수"></div>
+              <div style="position: absolute; left: 24%; top: 8px; width: 6px; height: 24px; border-radius: 3px; background: #8AB8FF;" title="안내"></div>
+              <div style="position: absolute; left: 41%; top: 8px; width: 6px; height: 24px; border-radius: 3px; background: #FF7A66;" title="오류"></div>
+              <div style="position: absolute; left: 58%; top: 8px; width: 6px; height: 24px; border-radius: 3px; background: #F5B942;" title="충전"></div>
+              <div style="position: absolute; left: 77%; top: 8px; width: 6px; height: 24px; border-radius: 3px; background: #5BE3A0;" title="서빙 완료"></div>
+              <div style="position: absolute; left: 42%; top: -4px; width: 2px; height: 48px; background: #FFFFFF;"></div>
+            </div>
+            <div style="display: flex; gap: 16px; font-size: 12px; color: #A3ACBD;"><span style="color: #5BE3A0;">■ 주문·서빙</span><span style="color: #8AB8FF;">■ 안내</span><span style="color: #F5B942;">■ 충전</span><span style="color: #FF8A78;">■ 오류</span></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var row = 'display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; border-bottom: 1px solid #2A3142;';
+    var lvl = function (bg, fg) { return 'padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: ' + bg + '; color: ' + fg + ';'; };
+    var err = lvl('#3B1512', '#FF8A78'), warn = lvl('#3A2E12', '#F5B942'), info = lvl('#1E2330', '#C9CFDA');
+    return {
+      alarms: [
+        { level: '경고', device: 'AMR-1', code: 'W-GUIDE-02', time: '16:39', msg: '고객 동행 확인 지연 20초 — T5 안내 감속·대기', levelStyle: warn, rowStyle: row },
+        { level: '정보', device: 'AMR-3', code: 'I-BAT-01', time: '16:31', msg: '배터리 25% — C2 복귀, 충전 확인됨', levelStyle: info, rowStyle: row },
+        { level: '오류', device: 'ARM-3', code: 'E-ARM-021', time: '16:12', msg: '그리퍼 파지 실패 — 적재 중단, 복구 대기', levelStyle: err, rowStyle: row + ' background: #1B2233; box-shadow: inset 3px 0 0 #FF7A66;' },
+        { level: '경고', device: 'AMR-2', code: 'W-NAV-05', time: '15:48', msg: 'T3 서빙 위치 도착 실패 — 재시도 후 정차', levelStyle: warn, rowStyle: row },
+        { level: '정보', device: '시스템', code: 'I-TBL-03', time: '15:40', msg: 'T4 정리 완료 — 이용 가능으로 변경 (admin)', levelStyle: info, rowStyle: row },
+        { level: '오류', device: 'AMR-1', code: 'E-COM-01', time: '15:02', msg: '통신 수신 지연 5초 — 비상 정지 후 재연결', levelStyle: err, rowStyle: row }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

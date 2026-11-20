@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>관리자 테이블 주문 조리</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#8AB8FF}a:hover{color:#C2DAFF}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; background: #0F1218; color: #E7EAF0; font-family: 'Noto Sans KR', system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 32px; padding: 0 20px; background: #171B24; border-bottom: 1px solid #2A3142;">
+    <div style="font-size: 17px; font-weight: 700;">OneTeam <span style="color: #8AB8FF;">관제</span></div>
+    <nav style="display: flex; gap: 4px; flex-grow: 1;" aria-label="관제 메뉴">
+      <a href="Admin_Monitoring.dc.html" style="padding: 8px 14px; border-radius: 8px; color: #A3ACBD; font-size: 14px; text-decoration: none;">통합 관제</a>
+      <a href="Admin_Tables.dc.html" style="padding: 8px 14px; border-radius: 8px; background: #26314A; color: #FFFFFF; font-size: 14px; font-weight: 500; text-decoration: none;">테이블 · 주문</a>
+      <a href="Admin_Alarms.dc.html" style="padding: 8px 14px; border-radius: 8px; color: #A3ACBD; font-size: 14px; text-decoration: none;">알람 · 이력</a>
+    </nav>
+    <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+      <span style="color: #A3ACBD;">ROS2</span><span style="padding: 4px 10px; border-radius: 999px; background: #123524; color: #5BE3A0;">연결됨</span>
+      <span style="color: #A3ACBD; margin-left: 6px;">16:42:08</span>
+      <span style="margin-left: 6px; padding: 4px 10px; border-radius: 8px; background: #1E2330;">admin</span>
+    </div>
+  </header>
+
+  <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 460px;">
+
+    <main style="padding: 20px; display: flex; flex-direction: column; gap: 20px; min-width: 0;">
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <h1 style="margin: 0; font-size: 20px; font-weight: 700;">테이블 현황</h1>
+        <div style="display: flex; gap: 12px; font-size: 13px; color: #A3ACBD;">
+          <span><b style="color: #E7EAF0;">이용 가능</b> 0</span><span><b style="color: #8AB8FF;">안내 중</b> 1</span><span><b style="color: #5BE3A0;">이용 중</b> 4</span><span><b style="color: #E7EAF0;">정리 대기</b> 1</span><span>· 6개 테이블 16석 (중앙 섬 배치)</span>
+        </div>
+        <div style="flex-grow: 1;"></div>
+        <span style="font-size: 12px; color: #A3ACBD;">상태 변경 시 중복 배정 여부를 먼저 검사합니다</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;">
+        <sc-for list="{{tables}}" as="t" hint-placeholder-count="6">
+          <div style="{{t.cardStyle}}">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <b style="font-size: 22px;">{{t.id}}</b>
+              <span style="font-size: 13px; color: #A3ACBD;">{{t.cap}}</span>
+              <span style="{{t.badgeStyle}}">{{t.state}}</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #C9CFDA; min-height: 40px;">
+              <span>{{t.line1}}</span>
+              <span style="color: #A3ACBD;">{{t.line2}}</span>
+            </div>
+            <button style="{{t.btnStyle}}">{{t.action}}</button>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 700;">조리 구역 (로봇팔 2대 · 받는 곳)</h2>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;">
+          <sc-for list="{{arms}}" as="a" hint-placeholder-count="3">
+            <div style="background: #171B24; border: 1px solid #2A3142; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 8px;"><b style="font-size: 15px;">{{a.id}}</b><span style="font-size: 12px; color: #A3ACBD; flex-grow: 1;">{{a.role}}</span><span style="{{a.badgeStyle}}">{{a.state}}</span></div>
+              <div style="font-size: 13px; color: #C9CFDA;">{{a.task}}</div>
+              <div style="height: 6px; background: #2A3142; border-radius: 3px; overflow: hidden;"><div style="{{a.barStyle}}"></div></div>
+              <div style="font-size: 12px; color: #A3ACBD;">{{a.step}}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </main>
+
+    <aside style="border-left: 1px solid #2A3142; padding: 20px; display: flex; flex-direction: column; gap: 14px; min-height: 0;" aria-label="주문 및 조리 현황">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 700; flex-grow: 1;">주문 · 조리 현황</h2>
+        <button style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #2A3142; background: #171B24; color: #E7EAF0; font: inherit; font-size: 12px;">진행 중</button>
+        <button style="height: 32px; padding: 0 12px; border-radius: 8px; border: 0; background: transparent; color: #A3ACBD; font: inherit; font-size: 12px;">완료</button>
+      </div>
+      <div style="display: flex; gap: 6px; font-size: 11px; color: #A3ACBD;">
+        <span style="padding: 3px 8px; border-radius: 999px; background: #1E2330;">접수</span><span>→</span>
+        <span style="padding: 3px 8px; border-radius: 999px; background: #1E2330;">조리</span><span>→</span>
+        <span style="padding: 3px 8px; border-radius: 999px; background: #1E2330;">서빙 준비</span><span>→</span>
+        <span style="padding: 3px 8px; border-radius: 999px; background: #1E2330;">서빙</span><span>→</span>
+        <span style="padding: 3px 8px; border-radius: 999px; background: #1E2330;">완료</span>
+      </div>
+      <sc-for list="{{orders}}" as="o" hint-placeholder-count="4">
+        <div style="background: #171B24; border: 1px solid #2A3142; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: baseline; gap: 10px;"><b style="font-size: 15px;">{{o.id}}</b><span style="font-size: 13px; color: #C9CFDA;">{{o.table}}</span><span style="margin-left: auto; font-size: 12px; color: #A3ACBD;">{{o.time}}</span></div>
+          <sc-for list="{{o.items}}" as="i" hint-placeholder-count="2">
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+              <span style="flex-grow: 1;">{{i.name}}</span>
+              <span style="{{i.chipStyle}}">{{i.state}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var card = function (border) { return 'background: #171B24; border: ' + border + '; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px;'; };
+    var badge = function (bg, fg) { return 'margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: ' + bg + '; color: ' + fg + ';'; };
+    var btn = 'height: 40px; border-radius: 8px; border: 1px solid #3A4560; background: #1E2330; color: #E7EAF0; font: inherit; font-size: 13px;';
+    var btnPrimary = 'height: 40px; border-radius: 8px; border: 0; background: #2F6FEB; color: #FFFFFF; font: inherit; font-size: 13px; font-weight: 700;';
+    var chip = function (bg, fg) { return 'padding: 3px 10px; border-radius: 999px; font-size: 12px; background: ' + bg + '; color: ' + fg + ';'; };
+    return {
+      tables: [
+        { id: '1번', cap: '2인석 · 벽쪽', state: '이용 중', line1: '2명 · 이용 38분', line2: 'ORD-0011 볶음밥 2 · 서빙 대기 (AMR-3 배정)', action: '상태 변경', cardStyle: card('1px solid #2A3142'), badgeStyle: badge('#123524', '#5BE3A0'), btnStyle: btn },
+        { id: '2번', cap: '2인석 · 벽쪽', state: '이용 중', line1: '1명 · 이용 26분', line2: 'ORD-0013 볶음밥 1 · 조리 중', action: '상태 변경', cardStyle: card('1px solid #2A3142'), badgeStyle: badge('#123524', '#5BE3A0'), btnStyle: btn },
+        { id: '3번', cap: '4인석 · 가운데', state: '안내 중', line1: '4명 · AMR-1 안내 중', line2: '16:40 입구 접수', action: '상태 변경', cardStyle: card('1px solid #2A3142'), badgeStyle: badge('#16264A', '#8AB8FF'), btnStyle: btn },
+        { id: '4번', cap: '4인석 · 가운데', state: '정리 대기', line1: '16:35 이용 종료 입력', line2: '신규 배정 대상에서 제외됨', action: '정리 완료 → 이용 가능', cardStyle: card('1px dashed #A3ACBD'), badgeStyle: badge('#2A3142', '#E7EAF0'), btnStyle: btnPrimary },
+        { id: '5번', cap: '2인석 · 벽쪽', state: '이용 중', line1: '2명 · 이용 52분', line2: 'ORD-0010 치킨 2 · 완료', action: '상태 변경', cardStyle: card('1px solid #2A3142'), badgeStyle: badge('#123524', '#5BE3A0'), btnStyle: btn },
+        { id: '6번', cap: '2인석 · 벽쪽', state: '이용 중', line1: '2명 · 이용 21분', line2: 'ORD-0012 볶음밥 1 · 서빙 중 (AMR-2)', action: '상태 변경', cardStyle: card('1px solid #2A3142'), badgeStyle: badge('#123524', '#5BE3A0'), btnStyle: btn }
+      ],
+      arms: [
+        { id: '튀김 로봇팔', role: 'ARM-1', state: '조리 중', task: 'ORD-0012 치킨 1', step: '3/5 바스켓 투입 · 튀김 중 (남은 2:10)', badgeStyle: chip('#123524', '#5BE3A0'), barStyle: 'width: 60%; height: 6px; background: #3DD68C;' },
+        { id: '웍 로봇팔', role: 'ARM-2', state: '조리 중', task: 'ORD-0013 볶음밥 1', step: '2/4 재료 투입 · 볶는 중 (남은 3:40)', badgeStyle: chip('#123524', '#5BE3A0'), barStyle: 'width: 45%; height: 6px; background: #3DD68C;' },
+        { id: '받는 곳', role: '튀김 · 볶음밥', state: '음식 대기', task: '볶음밥 받는 곳 · ORD-0011 볶음밥 2', step: '픽업 예정 AMR-3 · 1:12 경과', badgeStyle: chip('#3A2E12', '#F5B942'), barStyle: 'width: 100%; height: 6px; background: #F5B942;' }
+      ],
+      orders: [
+        { id: 'ORD-0013', table: '2번', time: '16:41', items: [ { name: '볶음밥 × 1', state: '조리', chipStyle: chip('#123524', '#5BE3A0') } ] },
+        { id: 'ORD-0012', table: '6번', time: '16:33', items: [ { name: '볶음밥 × 1', state: '서빙', chipStyle: chip('#16264A', '#8AB8FF') }, { name: '치킨 × 1', state: '조리', chipStyle: chip('#123524', '#5BE3A0') } ] },
+        { id: 'ORD-0011', table: '1번', time: '16:20', items: [ { name: '볶음밥 × 2', state: '서빙 준비', chipStyle: chip('#3A2E12', '#F5B942') } ] },
+        { id: 'ORD-0010', table: '5번', time: '15:58', items: [ { name: '치킨 × 2', state: '완료', chipStyle: chip('#1E2330', '#A3ACBD') } ] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

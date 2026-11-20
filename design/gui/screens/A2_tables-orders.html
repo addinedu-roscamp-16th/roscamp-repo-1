@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A2 테이블주문조리</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; min-height: 100vh; background: #0F1218; display: flex; align-items: center; justify-content: center; font-family: 'Noto Sans KR', system-ui, sans-serif; letter-spacing: -0.02em; }
+  button { cursor: pointer; }
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; background: rgb(15, 18, 24); color: rgb(231, 234, 240); font-family: &quot;Noto Sans KR&quot;, system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 32px; padding: 0px 20px; background: rgb(23, 27, 36); border-bottom: 1px solid rgb(42, 49, 66);">
+    <div style="font-size: 17px; font-weight: 700;">OneTeam <span style="color: rgb(138, 184, 255);">관제</span></div>
+    <nav aria-label="관제 메뉴" style="display: flex; gap: 4px; flex-grow: 1;">
+      <a href="A1_monitoring.html" style="padding: 8px 14px; border-radius: 8px; color: rgb(163, 172, 189); font-size: 14px; text-decoration: none;">통합 관제</a>
+      <a href="A2_tables-orders.html" style="padding: 8px 14px; border-radius: 8px; background: rgb(38, 49, 74); color: rgb(255, 255, 255); font-size: 14px; font-weight: 500; text-decoration: none;">테이블 · 주문</a>
+      <a href="A3_alarms-replay.html" style="padding: 8px 14px; border-radius: 8px; color: rgb(163, 172, 189); font-size: 14px; text-decoration: none;">알람 · 이력</a>
+    </nav>
+    <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+      <span style="color: rgb(163, 172, 189);">ROS2</span><span style="padding: 4px 10px; border-radius: 999px; background: rgb(18, 53, 36); color: rgb(91, 227, 160);">연결됨</span>
+      <span style="color: rgb(163, 172, 189); margin-left: 6px;">16:42:08</span>
+      <span style="margin-left: 6px; padding: 4px 10px; border-radius: 8px; background: rgb(30, 35, 48);">admin</span>
+    </div>
+  </header>
+
+  <div style="flex-grow: 1; min-height: 0px; display: grid; grid-template-columns: minmax(0px, 1fr) 460px;">
+
+    <main style="padding: 20px; display: flex; flex-direction: column; gap: 20px; min-width: 0px;">
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <h1 style="margin: 0px; font-size: 20px; font-weight: 700;">테이블 현황</h1>
+        <div style="display: flex; gap: 12px; font-size: 13px; color: rgb(163, 172, 189);">
+          <span><b style="color: rgb(231, 234, 240);">이용 가능</b> 0</span><span><b style="color: rgb(138, 184, 255);">안내 중</b> 1</span><span><b style="color: rgb(91, 227, 160);">이용 중</b> 4</span><span><b style="color: rgb(231, 234, 240);">정리 대기</b> 1</span><span>· 6개 테이블 16석 (중앙 섬 배치)</span>
+        </div>
+        <div style="flex-grow: 1;"></div>
+        <span style="font-size: 12px; color: rgb(163, 172, 189);">상태 변경 시 중복 배정 여부를 먼저 검사합니다</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0px, 1fr)); gap: 16px;">
+        
+          <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <b style="font-size: 22px;"><span class="sc-interp">1번</span></b>
+              <span style="font-size: 13px; color: rgb(163, 172, 189);"><span class="sc-interp">2인석 · 벽쪽</span></span>
+              <span style="margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(18, 53, 36); color: rgb(91, 227, 160);"><span class="sc-interp">이용 중</span></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: rgb(201, 207, 218); min-height: 40px;">
+              <span><span class="sc-interp">2명 · 이용 38분</span></span>
+              <span style="color: rgb(163, 172, 189);"><span class="sc-interp">ORD-0011 볶음밥 2 · 서빙 대기 (AMR-3 배정)</span></span>
+            </div>
+            <button style="height: 40px; border-radius: 8px; border: 1px solid rgb(58, 69, 96); background: rgb(30, 35, 48); color: rgb(231, 234, 240); font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; font-size: 13px;"><span class="sc-interp">상태 변경</span></button>
+          </div>
+        
+          <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <b style="font-size: 22px;"><span class="sc-interp">2번</span></b>
+              <span style="font-size: 13px; color: rgb(163, 172, 189);"><span class="sc-interp">2인석 · 벽쪽</span></span>
+              <span style="margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(18, 53, 36); color: rgb(91, 227, 160);"><span class="sc-interp">이용 중</span></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: rgb(201, 207, 218); min-height: 40px;">
+              <span><span class="sc-interp">1명 · 이용 26분</span></span>
+              <span style="color: rgb(163, 172, 189);"><span class="sc-interp">ORD-0013 볶음밥 1 · 조리 중</span></span>
+            </div>
+            <button style="height: 40px; border-radius: 8px; border: 1px solid rgb(58, 69, 96); background: rgb(30, 35, 48); color: rgb(231, 234, 240); font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; font-size: 13px;"><span class="sc-interp">상태 변경</span></button>
+          </div>
+        
+          <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <b style="font-size: 22px;"><span class="sc-interp">3번</span></b>
+              <span style="font-size: 13px; color: rgb(163, 172, 189);"><span class="sc-interp">4인석 · 가운데</span></span>
+              <span style="margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(22, 38, 74); color: rgb(138, 184, 255);"><span class="sc-interp">안내 중</span></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: rgb(201, 207, 218); min-height: 40px;">
+              <span><span class="sc-interp">4명 · AMR-1 안내 중</span></span>
+              <span style="color: rgb(163, 172, 189);"><span class="sc-interp">16:40 입구 접수</span></span>
+            </div>
+            <button style="height: 40px; border-radius: 8px; border: 1px solid rgb(58, 69, 96); background: rgb(30, 35, 48); color: rgb(231, 234, 240); font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; font-size: 13px;"><span class="sc-interp">상태 변경</span></button>
+          </div>
+        
+          <div style="background: rgb(23, 27, 36); border: 1px dashed rgb(163, 172, 189); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <b style="font-size: 22px;"><span class="sc-interp">4번</span></b>
+              <span style="font-size: 13px; color: rgb(163, 172, 189);"><span class="sc-interp">4인석 · 가운데</span></span>
+              <span style="margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(42, 49, 66); color: rgb(231, 234, 240);"><span class="sc-interp">정리 대기</span></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: rgb(201, 207, 218); min-height: 40px;">
+              <span><span class="sc-interp">16:35 이용 종료 입력</span></span>
+              <span style="color: rgb(163, 172, 189);"><span class="sc-interp">신규 배정 대상에서 제외됨</span></span>
+            </div>
+            <button style="height: 40px; border-radius: 8px; border: 0px; background: rgb(47, 111, 235); color: rgb(255, 255, 255); font-style: inherit; font-variant: inherit; font-stretch: inherit; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; font-size: 13px; font-weight: 700;"><span class="sc-interp">정리 완료 → 이용 가능</span></button>
+          </div>
+        
+          <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <b style="font-size: 22px;"><span class="sc-interp">5번</span></b>
+              <span style="font-size: 13px; color: rgb(163, 172, 189);"><span class="sc-interp">2인석 · 벽쪽</span></span>
+              <span style="margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(18, 53, 36); color: rgb(91, 227, 160);"><span class="sc-interp">이용 중</span></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: rgb(201, 207, 218); min-height: 40px;">
+              <span><span class="sc-interp">2명 · 이용 52분</span></span>
+              <span style="color: rgb(163, 172, 189);"><span class="sc-interp">ORD-0010 치킨 2 · 완료</span></span>
+            </div>
+            <button style="height: 40px; border-radius: 8px; border: 1px solid rgb(58, 69, 96); background: rgb(30, 35, 48); color: rgb(231, 234, 240); font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; font-size: 13px;"><span class="sc-interp">상태 변경</span></button>
+          </div>
+        
+          <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <b style="font-size: 22px;"><span class="sc-interp">6번</span></b>
+              <span style="font-size: 13px; color: rgb(163, 172, 189);"><span class="sc-interp">2인석 · 벽쪽</span></span>
+              <span style="margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(18, 53, 36); color: rgb(91, 227, 160);"><span class="sc-interp">이용 중</span></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: rgb(201, 207, 218); min-height: 40px;">
+              <span><span class="sc-interp">2명 · 이용 21분</span></span>
+              <span style="color: rgb(163, 172, 189);"><span class="sc-interp">ORD-0012 볶음밥 1 · 서빙 중 (AMR-2)</span></span>
+            </div>
+            <button style="height: 40px; border-radius: 8px; border: 1px solid rgb(58, 69, 96); background: rgb(30, 35, 48); color: rgb(231, 234, 240); font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; font-size: 13px;"><span class="sc-interp">상태 변경</span></button>
+          </div>
+        
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 style="margin: 0px; font-size: 16px; font-weight: 700;">조리 구역 (로봇팔 2대 · 받는 곳)</h2>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0px, 1fr)); gap: 16px;">
+          
+            <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 8px;"><b style="font-size: 15px;"><span class="sc-interp">튀김 로봇팔</span></b><span style="font-size: 12px; color: rgb(163, 172, 189); flex-grow: 1;"><span class="sc-interp">ARM-1</span></span><span style="padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(18, 53, 36); color: rgb(91, 227, 160);"><span class="sc-interp">조리 중</span></span></div>
+              <div style="font-size: 13px; color: rgb(201, 207, 218);"><span class="sc-interp">ORD-0012 치킨 1</span></div>
+              <div style="height: 6px; background: rgb(42, 49, 66); border-radius: 3px; overflow: hidden;"><div style="width: 60%; height: 6px; background: rgb(61, 214, 140);"></div></div>
+              <div style="font-size: 12px; color: rgb(163, 172, 189);"><span class="sc-interp">3/5 바스켓 투입 · 튀김 중 (남은 2:10)</span></div>
+            </div>
+          
+            <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 8px;"><b style="font-size: 15px;"><span class="sc-interp">웍 로봇팔</span></b><span style="font-size: 12px; color: rgb(163, 172, 189); flex-grow: 1;"><span class="sc-interp">ARM-2</span></span><span style="padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(18, 53, 36); color: rgb(91, 227, 160);"><span class="sc-interp">조리 중</span></span></div>
+              <div style="font-size: 13px; color: rgb(201, 207, 218);"><span class="sc-interp">ORD-0013 볶음밥 1</span></div>
+              <div style="height: 6px; background: rgb(42, 49, 66); border-radius: 3px; overflow: hidden;"><div style="width: 45%; height: 6px; background: rgb(61, 214, 140);"></div></div>
+              <div style="font-size: 12px; color: rgb(163, 172, 189);"><span class="sc-interp">2/4 재료 투입 · 볶는 중 (남은 3:40)</span></div>
+            </div>
+          
+            <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 8px;"><b style="font-size: 15px;"><span class="sc-interp">받는 곳</span></b><span style="font-size: 12px; color: rgb(163, 172, 189); flex-grow: 1;"><span class="sc-interp">튀김 · 볶음밥</span></span><span style="padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(58, 46, 18); color: rgb(245, 185, 66);"><span class="sc-interp">음식 대기</span></span></div>
+              <div style="font-size: 13px; color: rgb(201, 207, 218);"><span class="sc-interp">볶음밥 받는 곳 · ORD-0011 볶음밥 2</span></div>
+              <div style="height: 6px; background: rgb(42, 49, 66); border-radius: 3px; overflow: hidden;"><div style="width: 100%; height: 6px; background: rgb(245, 185, 66);"></div></div>
+              <div style="font-size: 12px; color: rgb(163, 172, 189);"><span class="sc-interp">픽업 예정 AMR-3 · 1:12 경과</span></div>
+            </div>
+          
+        </div>
+      </div>
+    </main>
+
+    <aside aria-label="주문 및 조리 현황" style="border-left: 1px solid rgb(42, 49, 66); padding: 20px; display: flex; flex-direction: column; gap: 14px; min-height: 0px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h2 style="margin: 0px; font-size: 18px; font-weight: 700; flex-grow: 1;">주문 · 조리 현황</h2>
+        <button style="height: 32px; padding: 0px 12px; border-radius: 8px; border: 1px solid rgb(42, 49, 66); background: rgb(23, 27, 36); color: rgb(231, 234, 240); font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; font-size: 12px;">진행 중</button>
+        <button style="height: 32px; padding: 0px 12px; border-radius: 8px; border: 0px; background: transparent; color: rgb(163, 172, 189); font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; font-size: 12px;">완료</button>
+      </div>
+      <div style="display: flex; gap: 6px; font-size: 11px; color: rgb(163, 172, 189);">
+        <span style="padding: 3px 8px; border-radius: 999px; background: rgb(30, 35, 48);">접수</span><span>→</span>
+        <span style="padding: 3px 8px; border-radius: 999px; background: rgb(30, 35, 48);">조리</span><span>→</span>
+        <span style="padding: 3px 8px; border-radius: 999px; background: rgb(30, 35, 48);">서빙 준비</span><span>→</span>
+        <span style="padding: 3px 8px; border-radius: 999px; background: rgb(30, 35, 48);">서빙</span><span>→</span>
+        <span style="padding: 3px 8px; border-radius: 999px; background: rgb(30, 35, 48);">완료</span>
+      </div>
+      
+        <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: baseline; gap: 10px;"><b style="font-size: 15px;"><span class="sc-interp">ORD-0013</span></b><span style="font-size: 13px; color: rgb(201, 207, 218);"><span class="sc-interp">2번</span></span><span style="margin-left: auto; font-size: 12px; color: rgb(163, 172, 189);"><span class="sc-interp">16:41</span></span></div>
+          
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+              <span style="flex-grow: 1;"><span class="sc-interp">볶음밥 × 1</span></span>
+              <span style="padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(18, 53, 36); color: rgb(91, 227, 160);"><span class="sc-interp">조리</span></span>
+            </div>
+          
+        </div>
+      
+        <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: baseline; gap: 10px;"><b style="font-size: 15px;"><span class="sc-interp">ORD-0012</span></b><span style="font-size: 13px; color: rgb(201, 207, 218);"><span class="sc-interp">6번</span></span><span style="margin-left: auto; font-size: 12px; color: rgb(163, 172, 189);"><span class="sc-interp">16:33</span></span></div>
+          
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+              <span style="flex-grow: 1;"><span class="sc-interp">볶음밥 × 1</span></span>
+              <span style="padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(22, 38, 74); color: rgb(138, 184, 255);"><span class="sc-interp">서빙</span></span>
+            </div>
+          
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+              <span style="flex-grow: 1;"><span class="sc-interp">치킨 × 1</span></span>
+              <span style="padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(18, 53, 36); color: rgb(91, 227, 160);"><span class="sc-interp">조리</span></span>
+            </div>
+          
+        </div>
+      
+        <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: baseline; gap: 10px;"><b style="font-size: 15px;"><span class="sc-interp">ORD-0011</span></b><span style="font-size: 13px; color: rgb(201, 207, 218);"><span class="sc-interp">1번</span></span><span style="margin-left: auto; font-size: 12px; color: rgb(163, 172, 189);"><span class="sc-interp">16:20</span></span></div>
+          
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+              <span style="flex-grow: 1;"><span class="sc-interp">볶음밥 × 2</span></span>
+              <span style="padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(58, 46, 18); color: rgb(245, 185, 66);"><span class="sc-interp">서빙 준비</span></span>
+            </div>
+          
+        </div>
+      
+        <div style="background: rgb(23, 27, 36); border: 1px solid rgb(42, 49, 66); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: baseline; gap: 10px;"><b style="font-size: 15px;"><span class="sc-interp">ORD-0010</span></b><span style="font-size: 13px; color: rgb(201, 207, 218);"><span class="sc-interp">5번</span></span><span style="margin-left: auto; font-size: 12px; color: rgb(163, 172, 189);"><span class="sc-interp">15:58</span></span></div>
+          
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+              <span style="flex-grow: 1;"><span class="sc-interp">치킨 × 2</span></span>
+              <span style="padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgb(30, 35, 48); color: rgb(163, 172, 189);"><span class="sc-interp">완료</span></span>
+            </div>
+          
+        </div>
+      
+    </aside>
+  </div></div>
+</body>
+</html>
