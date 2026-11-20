@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { getAdminApi, newRequestKey, type AdminApi, type AdminOverview } from '../api'
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { getAdminApi, MOCK_BASE, newRequestKey, type AdminApi, type AdminOverview } from '../api'
 import { Stage } from '../components/Stage'
 import { AlarmsReplay } from './AlarmsReplay'
 import { Ctx, opKey, useAdmin, type AdminCtx, type RunOp } from './context'
@@ -157,6 +157,7 @@ function Header() {
 
 /** 서버와 연결이 안 될 때 무엇을 확인할지 알려 줌. 연결되면 사라짐 */
 function ConnectionNotice({ hasData, connected, waitedLong, lastAt }: { hasData: boolean; connected: boolean; waitedLong: boolean; lastAt: string | null }) {
+  const path = useLocation().pathname
   if (hasData && connected) return null
   if (!hasData && connected && !waitedLong)
     return (
@@ -171,9 +172,10 @@ function ConnectionNotice({ hasData, connected, waitedLong, lastAt }: { hasData:
         서버가 켜져 있는지, <code>frontend/.env</code>의 <code>BACKEND_URL</code> 주소가 맞는지 확인해 주세요. 연결되면 화면이 저절로 채워져요.
       </span>
       {!hasData && (
-        <Link to="/" className={s.link}>
-          첫 화면에서 가짜 데이터로 바꾸기
-        </Link>
+        <a href={`${MOCK_BASE}${path}`} className={s.link}>
+          서버 없이 목업 데이터로 보기 ({MOCK_BASE}
+          {path})
+        </a>
       )}
     </div>
   )

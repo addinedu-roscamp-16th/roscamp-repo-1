@@ -8,16 +8,16 @@ import { getDataMode } from './mode'
 
 export * from './adminContract'
 export * from './contract'
-export { getDataMode, setDataMode, type DataMode } from './mode'
+export { getDataMode, isMockPath, MOCK_BASE, type DataMode } from './mode'
 export { tableName } from './storeLayout'
 
 let shared: FrybotApi | null = null
 
 /**
  * 화면이 쓰는 API 하나를 돌려줍니다.
- * 첫 화면 스위치가 "진짜 서버"면 실제 Web Service, "가짜 데이터"면 가짜 API.
+ * 기본 주소면 실제 Web Service, /mock 으로 시작하는 주소면 목업(가짜) API.
  * 가짜 API는 한 브라우저 탭 안에서 키오스크·태블릿이 같은 매장 상태를 공유합니다.
- * 가짜 모드에서 주소 뒤에 ?robot=busy 를 붙이면 안내 로봇 대기(K3) 흐름을 볼 수 있습니다.
+ * 목업에서 주소 뒤에 ?robot=busy 를 붙이면 안내 로봇 대기(K3) 흐름을 볼 수 있습니다 (/mock/kiosk?robot=busy).
  */
 export function getApi(): FrybotApi {
   if (shared) return shared

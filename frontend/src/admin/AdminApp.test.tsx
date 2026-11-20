@@ -174,7 +174,7 @@ describe('서버에 연결되지 않을 때', () => {
   it('A1: 매장 구성은 보이고 상태는 연결 안 됨, 무엇을 확인할지 알려 준다', () => {
     renderOffline('/admin')
     expect(screen.getByRole('alert')).toHaveTextContent('백엔드 서버에 연결되지 않았어요')
-    expect(screen.getByRole('link', { name: '첫 화면에서 가짜 데이터로 바꾸기' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /목업 데이터로 보기/ })).toHaveAttribute('href', '/mock/admin')
     expect(screen.getByText('AMR 3대')).toBeInTheDocument()
     const list = screen.getByRole('complementary', { name: '대상 목록' })
     expect(within(list).getAllByText('연결 안 됨')).toHaveLength(3)
