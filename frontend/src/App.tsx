@@ -1,5 +1,6 @@
 import { BrowserRouter, Link, Route, Routes, useParams } from 'react-router-dom'
 import { AdminApp } from './admin/AdminApp'
+import { ApiCheck } from './check/ApiCheck'
 import { KioskApp } from './kiosk/KioskApp'
 import { getDataMode, MOCK_BASE } from './api'
 import { tableSpec } from './api/storeLayout'
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/kiosk" element={<KioskApp />} />
         <Route path="/table/:tableId" element={<TableRoute />} />
         <Route path="/admin/*" element={<AdminApp />} />
+        <Route path="/check" element={<ApiCheck />} />
         <Route path="*" element={<Placeholder title="없는 주소예요" />} />
       </Routes>
     </BrowserRouter>
