@@ -1,76 +1,35 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { CartLine, Order, TableApi, TableState } from '../api'
-import { MOCK_MENU, createMockTableApi } from '../api/mockTableApi'
+import { ApiError } from '../api'
+import { createMockApi } from '../api/mockApi'
+import { fakeApi, orderOf, tableOf, visitOf } from '../test/fakeApi'
 import { minutesFromNow, subjectJosa, won } from './format'
 import { TableApp } from './TableApp'
 
-/** 테스트에서 상태를 직접 밀어 넣을 수 있는 API */
-function controlledApi(initial: Order[] = []) {
-  let push: (s: TableState) => void = () => {}
-  const api: TableApi = {
-    getMenu: async () => MOCK_MENU,
-    placeOrder: vi.fn(async (tableId: string, lines: CartLine[]) => {
-      const o: Order = {
-        orderId: 'ORD-0012',
-        tableId,
-        items: lines.map((l) => ({
-          menuId: l.menuId,
-          name: MOCK_MENU.find((m) => m.menuId === l.menuId)!.name,
-          qty: l.qty,
-          status: 'queued' as const,
-        })),
-        stage: 'received',
-        placedAt: new Date().toISOString(),
-        etaAt: new Date(Date.now() + 6 * 60_000).toISOString(),
-      }
-      push({ tableId, session: 'active', orders: [o], delivery: null })
-      return o
-    }),
-    watchTable: (_id, cb) => {
-      push = cb
-      cb({ tableId: 'T3', session: 'active', orders: initial, delivery: null })
-      return () => {}
-    },
-    endSession: vi.fn(async () => {
-      push({ tableId: 'T3', session: 'ended', orders: [], delivery: null })
-    }),
-    callStaff: vi.fn(async () => {}),
-  }
-  return { api, push: (s: TableState) => act(() => push(s)) }
-}
-
-const order = (over: Partial<Order> = {}): Order => ({
-  orderId: 'ORD-0012',
-  tableId: 'T3',
-  items: [
-    { menuId: 'chicken', name: '치킨', qty: 1, status: 'ready' },
-    { menuId: 'friedrice', name: '볶음밥', qty: 1, status: 'cooking' },
-  ],
-  stage: 'cooking',
-  placedAt: new Date().toISOString(),
-  etaAt: new Date(Date.now() + 6 * 60_000).toISOString(),
-  ...over,
-})
-
-async function orderChickenAndRice(user: ReturnType<typeof userEvent.setup>) {
+async function addChickenAndTwoRice(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: '치킨 더하기' }))
   await user.click(screen.getByRole('button', { name: '볶음밥 더하기' }))
   await user.click(screen.getByRole('button', { name: '볶음밥 더하기' }))
 }
 
+function seated(orders = [] as ReturnType<typeof orderOf>[], over = {}) {
+  const f = fakeApi()
+  f.seed(tableOf(), visitOf({ orders, ...over }))
+  return f
+}
+
 describe('테이블 태블릿 흐름', () => {
   it('T1: 담기 전에는 주문 확인이 꺼져 있고, 담으면 개수와 합계가 바뀐다', async () => {
-    const { api } = controlledApi()
-    render(<TableApp tableId="T3" api={api} />)
+    const { api } = seated()
+    render(<TableApp tableId={3} api={api} />)
     const user = userEvent.setup()
 
-    expect(screen.getByText('T3 테이블')).toBeInTheDocument()
+    expect(screen.getByText('3번 테이블')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '주문 확인' })).toBeDisabled()
     expect(await screen.findByRole('button', { name: '치킨 빼기' })).toBeDisabled()
 
-    await orderChickenAndRice(user)
+    await addChickenAndTwoRice(user)
     expect(screen.getByText('담은 메뉴 3개')).toBeInTheDocument()
     expect(screen.getByText(won(18000 + 9000 * 2))).toBeInTheDocument()
 
@@ -78,64 +37,81 @@ describe('테이블 태블릿 흐름', () => {
     expect(screen.getByText('담은 메뉴 2개')).toBeInTheDocument()
   })
 
-  it('T1 → T2 → 수정 → T2 → 주문하기 → T3', async () => {
-    const { api } = controlledApi()
-    render(<TableApp tableId="T3" api={api} />)
+  it('T1 → T2 → 수정 → T2 → 주문하기: WEB-04 형식으로 보낸다', async () => {
+    const f = seated()
+    render(<TableApp tableId={3} api={f.api} />)
     const user = userEvent.setup()
 
-    await orderChickenAndRice(user)
+    await addChickenAndTwoRice(user)
     await user.click(screen.getByRole('button', { name: '주문 확인' }))
     expect(screen.getByRole('heading', { name: '이대로 주문할까요?' })).toBeInTheDocument()
     expect(screen.getByText(won(36000))).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '수정' }))
-    expect(screen.getByText('담은 메뉴 3개')).toBeInTheDocument() // 담은 것 유지
+    expect(screen.getByText('담은 메뉴 3개')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '주문 확인' }))
     await user.click(screen.getByRole('button', { name: '주문하기' }))
 
-    expect(api.placeOrder).toHaveBeenCalledWith('T3', [
-      { menuId: 'chicken', qty: 1 },
-      { menuId: 'friedrice', qty: 2 },
-    ])
-    expect(await screen.findByText('주문 ORD-0012')).toBeInTheDocument()
-    expect(screen.getByText('도착 예정')).toBeInTheDocument()
-    expect(screen.getByText('약 6분 뒤')).toBeInTheDocument()
+    expect(f.api.createOrder).toHaveBeenCalledWith({
+      visit_id: 'v1',
+      table_id: 3,
+      items: [
+        { menu_id: 1, qty: 1 },
+        { menu_id: 2, qty: 2 },
+      ],
+      request_key: expect.any(String),
+    })
+  })
+
+  it('주문 결과가 불명이면 같은 요청 키로 다시 보낸다', async () => {
+    const createOrder = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError('RESULT_UNCONFIRMED', 503))
+      .mockResolvedValueOnce({ order_id: 'ORD-0012', status: 'ORDERED' })
+    const f = fakeApi({ createOrder })
+    f.seed(tableOf(), visitOf())
+    render(<TableApp tableId={3} api={f.api} />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: '치킨 더하기' }))
+    await user.click(screen.getByRole('button', { name: '주문 확인' }))
+    await user.click(screen.getByRole('button', { name: '주문하기' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('한 번 더 눌러 주세요')
+    await user.click(screen.getByRole('button', { name: '주문하기' }))
+
+    const [a, b] = createOrder.mock.calls.map((c) => c[0])
+    expect(b.request_key).toBe(a.request_key)
   })
 
   it('T3: 단계 표시와 메뉴별 상태 (시안: 치킨 서빙 준비 완료, 볶음밥 조리 중)', async () => {
-    const { api } = controlledApi([order()])
-    render(<TableApp tableId="T3" api={api} />)
+    const { api } = seated([orderOf()])
+    render(<TableApp tableId={3} api={api} />)
 
     expect(await screen.findByText('주문 ORD-0012')).toBeInTheDocument()
     const track = screen.getByRole('list', { name: '주문 진행 단계' })
     expect(within(track).getByText('조리 중').closest('[aria-current]')).toHaveAttribute('aria-current', 'step')
     expect(screen.getByText('서빙 준비 완료')).toBeInTheDocument()
     expect(screen.getByText('로봇팔이 조리 중')).toBeInTheDocument()
+    expect(screen.getByText('약 6분 뒤')).toBeInTheDocument()
   })
 
-  it('서빙 로봇이 오면 T4로 바뀌고, 전달이 끝나면 T3로 돌아온다', async () => {
-    const o = order({ stage: 'serving' })
-    const { api, push } = controlledApi([o])
-    render(<TableApp tableId="T3" api={api} />)
-    push({
-      tableId: 'T3',
-      session: 'active',
-      orders: [o],
-      delivery: { orderId: o.orderId, itemNames: ['치킨'], step: 'transferring' },
-    })
+  it('주문이 ARRIVED면 T4, COMPLETED가 되면 T3로 돌아온다', async () => {
+    const f = seated([orderOf({ status: 'ARRIVED', delivery_step: 'TRANSFERRING' })])
+    render(<TableApp tableId={3} api={f.api} />)
 
-    expect(await screen.findByRole('heading', { name: /치킨\s*이\s*도착했어요/ })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /치킨, 볶음밥\s*이\s*도착했어요/ })).toBeInTheDocument()
     expect(screen.getByText('음식 도착')).toBeInTheDocument()
     expect(screen.getByText('테이블로 옮기는 중').closest('li')).toHaveAttribute('aria-current', 'step')
 
-    push({ tableId: 'T3', session: 'active', orders: [o], delivery: null })
+    f.setVisit(visitOf({ orders: [orderOf({ status: 'COMPLETED', eta_at: null })] }))
     expect(screen.getByText('주문 ORD-0012')).toBeInTheDocument()
+    expect(screen.getByText('주문 상태')).toBeInTheDocument()
   })
 
-  it('T3 → 이용 종료 → T5 확인창: 계속 이용은 닫기, 이용 종료는 종료 화면', async () => {
-    const { api, push } = controlledApi([order()])
-    render(<TableApp tableId="T3" api={api} />)
+  it('T3 → 이용 종료 → T5: 계속 이용은 닫기, 이용 종료는 WEB-06 후 종료 화면', async () => {
+    const f = seated([orderOf({ status: 'COMPLETED' })])
+    render(<TableApp tableId={3} api={f.api} />)
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: '이용 종료' }))
@@ -145,16 +121,39 @@ describe('테이블 태블릿 흐름', () => {
 
     await user.click(screen.getByRole('button', { name: '이용 종료' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '이용 종료' }))
-    expect(api.endSession).toHaveBeenCalledWith('T3')
-    expect(await screen.findByText('이용해 주셔서 고마워요')).toBeInTheDocument()
+    expect(f.api.endVisit).toHaveBeenCalledWith('v1', expect.any(String))
+
+    f.setTable(tableOf({ status: 'CLEANING' }))
+    expect(screen.getByText('이용해 주셔서 고마워요')).toBeInTheDocument()
 
     // 정리 후 다음 손님 → 메뉴 화면
-    push({ tableId: 'T3', session: 'active', orders: [], delivery: null })
-    expect(screen.getByRole('heading', { name: '무엇을 드실래요?' })).toBeInTheDocument()
+    f.setVisit(visitOf({ visit_id: 'v2' }))
+    f.setTable(tableOf({ status: 'IN_USE', visit_id: 'v2' }))
+    expect(await screen.findByRole('heading', { name: '무엇을 드실래요?' })).toBeInTheDocument()
+  })
+
+  it('받지 않은 음식이 있으면(can_end=false) 종료 창 대신 안내', async () => {
+    const { api } = seated([orderOf()], { can_end: false })
+    render(<TableApp tableId={3} api={api} />)
+    await userEvent.setup().click(await screen.findByRole('button', { name: '이용 종료' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('아직 받지 않은 음식이 있어요')
+  })
+
+  it('가격 정보가 없으면 합계를 보류한다 (WEB-03)', async () => {
+    const f = fakeApi({
+      getMenu: async () => [{ menu_id: 1, name: '치킨', price: null, is_available: true }],
+    })
+    f.seed(tableOf(), visitOf())
+    render(<TableApp tableId={3} api={f.api} />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: '치킨 더하기' }))
+    await user.click(screen.getByRole('button', { name: '주문 확인' }))
+    expect(screen.getByText('가격 확인 중')).toBeInTheDocument()
   })
 
   it('가짜 API로 주문부터 전달 완료까지 끝까지 흘러간다', async () => {
-    render(<TableApp tableId="T3" api={createMockTableApi({ tickMs: 30 })} />)
+    render(<TableApp tableId={3} api={createMockApi({ tickMs: 30, autoSeat: true })} />)
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: '치킨 더하기' }))
     await user.click(screen.getByRole('button', { name: '주문 확인' }))
@@ -162,9 +161,7 @@ describe('테이블 태블릿 흐름', () => {
 
     expect(await screen.findByText('주문 ORD-0012')).toBeInTheDocument()
     expect(await screen.findByText('음식 도착')).toBeInTheDocument()
-    // T4가 끝나면 T3로 돌아와 '전달 완료'
     expect(await screen.findByText('주문 상태', {}, { timeout: 3000 })).toBeInTheDocument()
-    expect(screen.getAllByText('전달 완료').length).toBeGreaterThan(0)
   })
 })
 

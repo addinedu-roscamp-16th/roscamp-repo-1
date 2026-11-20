@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
-import type { CartLine, Delivery, MenuItem, Order, OrderStage } from '../api'
+import { tableName, type MenuItem, type Order } from '../api'
 import c from '../components/customer.module.css'
 import { Robot } from '../components/Robot'
 import { BellIcon, BrandMark } from '../kiosk/parts'
-import { ITEM_STATUS_TEXT, clock, minutesFromNow, subjectJosa, won } from './format'
+import { clock, itemStatusText, minutesFromNow, orderStage, subjectJosa, won, type CartLine, type Stage } from './format'
 import s from './table.module.css'
 
 export function TableTopBar(props: {
-  tableId: string
+  tableId: number
   label: string
   arrived?: boolean
   onCallStaff: () => void
@@ -17,7 +17,7 @@ export function TableTopBar(props: {
     <div className={`${c.topBar} ${arrived ? s.topBarArrived : ''}`}>
       <BrandMark />
       <span className={c.brand}>OneTeam 레스토랑</span>
-      <span className={s.tableBadge}>{tableId} 테이블</span>
+      <span className={s.tableBadge}>{tableName(tableId)} 테이블</span>
       <span className={`${s.screenLabel} ${arrived ? s.screenLabelAccent : ''}`}>{label}</span>
       <button
         type="button"
@@ -44,14 +44,16 @@ export function T1Menu(props: {
   menu: MenuItem[] | null
   cart: CartLine[]
   hasOrders: boolean
-  onChange: (menuId: string, qty: number) => void
+  /** 진행 중 방문이 있어야 주문할 수 있음 */
+  canOrder: boolean
+  onChange: (menuId: number, qty: number) => void
   onNext: () => void
   onStatus: () => void
 }) {
-  const { menu, cart, hasOrders, onChange, onNext, onStatus } = props
-  const qtyOf = (id: string) => cart.find((l) => l.menuId === id)?.qty ?? 0
+  const { menu, cart, hasOrders, canOrder, onChange, onNext, onStatus } = props
+  const qtyOf = (id: number) => cart.find((l) => l.menu_id === id)?.qty ?? 0
   const count = cart.reduce((n, l) => n + l.qty, 0)
-  const total = cart.reduce((n, l) => n + l.qty * (menu?.find((m) => m.menuId === l.menuId)?.price ?? 0), 0)
+  const total = cartTotal(menu ?? [], cart)
 
   return (
     <>
@@ -61,18 +63,19 @@ export function T1Menu(props: {
           {!menu && <div className={s.note16}>메뉴를 불러오는 중…</div>}
           <div className={s.menuGrid}>
             {menu?.map((m) => {
-              const q = qtyOf(m.menuId)
+              const q = qtyOf(m.menu_id)
+              const soldOut = !m.is_available
               return (
-                <div key={m.menuId} className={s.menuCard}>
+                <div key={m.menu_id} className={s.menuCard}>
                   <div
                     className={s.menuPhoto}
-                    style={m.imageUrl ? { backgroundImage: `url(${m.imageUrl})` } : undefined}
+                    style={m.image_url ? { backgroundImage: `url(${m.image_url})` } : undefined}
                   >
-                    {!m.imageUrl && '메뉴 사진'}
+                    {soldOut ? '품절' : !m.image_url && '메뉴 사진'}
                   </div>
                   <div className={s.menuInfo}>
                     <b>{m.name}</b>
-                    <span>{won(m.price)}</span>
+                    <span>{m.price == null ? '' : won(m.price)}</span>
                   </div>
                   <div className={s.stepper}>
                     <button
@@ -80,7 +83,7 @@ export function T1Menu(props: {
                       className={s.stepBtn}
                       aria-label={`${m.name} 빼기`}
                       disabled={q === 0}
-                      onClick={() => onChange(m.menuId, q - 1)}
+                      onClick={() => onChange(m.menu_id, q - 1)}
                     >
                       −
                     </button>
@@ -89,7 +92,8 @@ export function T1Menu(props: {
                       type="button"
                       className={`${s.stepBtn} ${s.stepBtnPlus}`}
                       aria-label={`${m.name} 더하기`}
-                      onClick={() => onChange(m.menuId, q + 1)}
+                      disabled={soldOut}
+                      onClick={() => onChange(m.menu_id, q + 1)}
                     >
                       +
                     </button>
@@ -106,7 +110,7 @@ export function T1Menu(props: {
       <div className={s.footer}>
         <div className={s.cartSummary}>
           <span>담은 메뉴 {count}개</span>
-          <b>{won(total)}</b>
+          <b>{total == null ? '' : won(total)}</b>
         </div>
         <div className={s.footerBtns}>
           {hasOrders && (
@@ -118,7 +122,7 @@ export function T1Menu(props: {
             type="button"
             className={`${c.primaryBtn} ${s.btn72}`}
             style={{ width: 360 }}
-            disabled={count === 0}
+            disabled={count === 0 || !canOrder}
             onClick={onNext}
           >
             주문 확인
@@ -131,7 +135,7 @@ export function T1Menu(props: {
 
 /* T2 주문 확인 · 확정 (SR-011·012) */
 export function T2Confirm(props: {
-  tableId: string
+  tableId: number
   menu: MenuItem[]
   cart: CartLine[]
   busy: boolean
@@ -142,9 +146,9 @@ export function T2Confirm(props: {
   const { tableId, menu, cart, busy, error, onEdit, onPlace } = props
   const lines = cart
     .filter((l) => l.qty > 0)
-    .map((l) => ({ ...l, item: menu.find((m) => m.menuId === l.menuId)! }))
+    .map((l) => ({ ...l, item: menu.find((m) => m.menu_id === l.menu_id)! }))
     .filter((l) => l.item)
-  const total = lines.reduce((n, l) => n + l.qty * l.item.price, 0)
+  const total = cartTotal(menu, cart)
 
   return (
     <>
@@ -153,21 +157,21 @@ export function T2Confirm(props: {
           <h1 className={s.title36}>이대로 주문할까요?</h1>
           <div className={s.receipt}>
             {lines.map((l) => (
-              <div key={l.menuId} className={s.receiptRow}>
+              <div key={l.menu_id} className={s.receiptRow}>
                 <span>
                   {l.item.name} <span className={s.muted}>× {l.qty}</span>
                 </span>
-                <b>{won(l.qty * l.item.price)}</b>
+                <b>{l.item.price == null ? '' : won(l.qty * l.item.price)}</b>
               </div>
             ))}
             <div className={s.divider} />
             <div className={`${s.receiptRow} ${s.receiptRowSmall}`}>
               <span className={s.muted}>받는 테이블</span>
-              <b>{tableId}</b>
+              <b>{tableName(tableId)}</b>
             </div>
             <div className={s.receiptTotal}>
               <span>합계</span>
-              <b>{won(total)}</b>
+              <b>{total == null ? '가격 확인 중' : won(total)}</b>
             </div>
           </div>
           {error && (
@@ -198,14 +202,14 @@ export function T2Confirm(props: {
   )
 }
 
-const STAGES: { key: OrderStage; label: string }[] = [
+const STAGES: { key: Stage; label: string }[] = [
   { key: 'received', label: '접수' },
   { key: 'cooking', label: '조리 중' },
   { key: 'serving', label: '서빙' },
   { key: 'done', label: '완료' },
 ]
 
-function StageTrack({ stage }: { stage: OrderStage }) {
+function StageTrack({ stage }: { stage: Stage }) {
   const now = STAGES.findIndex((x) => x.key === stage)
   const allDone = stage === 'done'
   return (
@@ -252,24 +256,37 @@ export function T3Status(props: {
   onEnd: () => void
 }) {
   const { order, now, onMore, onEnd } = props
-  const done = order.stage === 'done'
+  const stage = orderStage(order.status)
+  const done = stage === 'done'
+  const held = order.status === 'ON_HOLD'
   return (
     <>
       <div className={s.main}>
         <div className={s.col} style={{ gap: 20 }}>
           <div className={s.col} style={{ gap: 4 }}>
-            <span className={s.etaLabel}>{done ? '주문 상태' : '도착 예정'}</span>
+            <span className={s.etaLabel}>{done || held || !order.eta_at ? '주문 상태' : '도착 예정'}</span>
             <div className={s.etaRow}>
-              <span className={s.etaTime}>{done ? '전달 완료' : order.etaAt ? clock(order.etaAt) : '-'}</span>
-              {!done && order.etaAt && <span className={s.etaIn}>{minutesFromNow(order.etaAt, now)}</span>}
+              <span className={s.etaTime}>
+                {done
+                  ? '전달 완료'
+                  : held
+                    ? '잠시 멈춤'
+                    : order.eta_at
+                      ? clock(order.eta_at)
+                      : STAGES.find((x) => x.key === stage)!.label}
+              </span>
+              {!done && !held && order.eta_at && (
+                <span className={s.etaIn}>{minutesFromNow(order.eta_at, now)}</span>
+              )}
             </div>
+            {held && <span className={s.etaIn}>장비를 확인하고 있어요. 곧 다시 이어서 만들어요</span>}
           </div>
-          <StageTrack stage={order.stage} />
+          <StageTrack stage={stage} />
           <div className={s.itemList}>
             {order.items.map((it) => {
-              const st = ITEM_STATUS_TEXT[it.status]
+              const st = itemStatusText(order.status, it.ready_at != null)
               return (
-                <div key={it.menuId} className={s.itemRow}>
+                <div key={it.order_item_id} className={s.itemRow}>
                   <span>
                     {it.name} {it.qty}
                   </span>
@@ -298,16 +315,17 @@ export function T3Status(props: {
   )
 }
 
-const DELIVERY_STEPS: { key: Delivery['step']; label: string }[] = [
-  { key: 'arrived', label: '서빙 로봇 도착 · 정차 확인' },
-  { key: 'transferring', label: '테이블로 옮기는 중' },
-  { key: 'done', label: '전달 완료' },
+const DELIVERY_STEPS: { key: NonNullable<Order['delivery_step']>; label: string }[] = [
+  { key: 'STOPPED', label: '서빙 로봇 도착 · 정차 확인' },
+  { key: 'TRANSFERRING', label: '테이블로 옮기는 중' },
+  { key: 'DONE', label: '전달 완료' },
 ]
 
 /* T4 음식 도착 안내 (SR-024·025·026) */
-export function T4Arrived({ delivery }: { delivery: Delivery }) {
-  const names = delivery.itemNames.join(', ')
-  const now = DELIVERY_STEPS.findIndex((x) => x.key === delivery.step)
+export function T4Arrived({ order }: { order: Order }) {
+  const names = order.items.map((i) => i.name).join(', ')
+  const step = order.delivery_step ?? 'STOPPED'
+  const now = DELIVERY_STEPS.findIndex((x) => x.key === step)
   return (
     <>
       <div className={`${s.main} ${s.mainArrived}`}>
@@ -328,8 +346,8 @@ export function T4Arrived({ delivery }: { delivery: Delivery }) {
           </div>
           <ol className={s.deliverySteps} aria-label="전달 진행">
             {DELIVERY_STEPS.map((st, i) => {
-              const done = i < now || delivery.step === 'done'
-              const current = i === now && delivery.step !== 'done'
+              const done = i < now || step === 'DONE'
+              const current = i === now && step !== 'DONE'
               return (
                 <li
                   key={st.key}
@@ -386,12 +404,31 @@ export function T5EndDialog(props: { busy: boolean; onKeep: () => void; onEnd: (
 }
 
 /** 이용 종료 뒤 화면 — 시안에 없어 고객 화면 규칙에 맞춰 추가 */
-export function TableEnded() {
+export function TableEnded({ variant }: { variant: 'ended' | 'empty' }) {
   return (
     <div className={s.ended}>
       <Robot pose="wave" width={170} height={204} />
-      <h1 className={s.title36}>이용해 주셔서 고마워요</h1>
-      <div className={s.note16}>직원이 자리를 정리해 드릴게요. 안녕히 가세요!</div>
+      {variant === 'ended' ? (
+        <>
+          <h1 className={s.title36}>이용해 주셔서 고마워요</h1>
+          <div className={s.note16}>직원이 자리를 정리해 드릴게요. 안녕히 가세요!</div>
+        </>
+      ) : (
+        <>
+          <h1 className={s.title36}>곧 손님을 모실 자리예요</h1>
+          <div className={s.note16}>입구에서 접수하고 자리에 앉으면 주문할 수 있어요</div>
+        </>
+      )}
     </div>
   )
+}
+
+function cartTotal(menu: MenuItem[], cart: CartLine[]): number | null {
+  let sum = 0
+  for (const l of cart) {
+    const m = menu.find((x) => x.menu_id === l.menu_id)
+    if (!m || m.price == null) return null // 가격 근거가 없으면 합계 표시 보류 (WEB-03)
+    sum += m.price * l.qty
+  }
+  return sum
 }

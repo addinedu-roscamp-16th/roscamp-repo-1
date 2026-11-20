@@ -1,10 +1,9 @@
-import type { GuideStatus, PartySize, TableAssignment } from '../api'
-import { PARTY_SIZES } from '../api'
+import { tableName, type GuideProgress } from '../api'
 import { Robot } from '../components/Robot'
 import { StoreMap } from '../components/StoreMap'
 import c from '../components/customer.module.css'
 import s from './kiosk.module.css'
-import { formatEta } from './format'
+import { PARTY_SIZES, formatEta, type PartySize, type Seat } from './format'
 import { BellIcon, CheckIcon, ProgressBar, RobotPanel } from './parts'
 
 /* K1 인원 선택 (SR-001) */
@@ -62,18 +61,18 @@ export function K1PartySize(props: {
 
 /* K2 테이블 배정 결과 (SR-002·003·004·005) */
 export function K2TableAssigned(props: {
-  assignment: TableAssignment
-  status: Extract<GuideStatus, { state: 'robot_coming' }> | null
+  assignment: Seat
+  guide: GuideProgress | null
   onHome: () => void
 }) {
-  const { assignment: a, status, onHome } = props
+  const { assignment: a, guide, onHome } = props
   return (
     <>
       <div className={`${s.main} ${s.mainWide}`}>
         <div className={s.col} style={{ gap: 20 }}>
           <div className={s.eyebrow}>자리를 찾았어요</div>
           <h1 className={s.title44} style={{ margin: 0 }}>
-            <span className={s.accent}>{a.tableId}</span> 테이블로
+            <span className={s.accent}>{tableName(a.tableId)}</span> 테이블로
             <br />
             모실게요
           </h1>
@@ -86,9 +85,9 @@ export function K2TableAssigned(props: {
             <div className={s.robotCardBody}>
               <div className={s.robotCardHead}>
                 <b>안내 로봇이 오고 있어요</b>
-                {status && <span>{formatEta(status.etaSec)}</span>}
+                {guide?.eta_sec != null && <span>{formatEta(guide.eta_sec)}</span>}
               </div>
-              <ProgressBar value={status?.progress ?? 0} label="안내 로봇 도착 진행률" />
+              <ProgressBar value={guide?.progress ?? 0} label="안내 로봇 도착 진행률" />
             </div>
           </div>
         </div>
@@ -108,20 +107,21 @@ export function K2TableAssigned(props: {
 
 /* K3 안내 로봇 대기 — 예외 (SR-005) */
 export function K3RobotWaiting(props: {
-  assignment: TableAssignment
-  status: GuideStatus | null
+  assignment: Seat
+  guide: GuideProgress | null
   onHome: () => void
 }) {
-  const { assignment: a, status, onHome } = props
-  const position = status?.state === 'queued' ? `${status.queuePosition}번째` : '곧 도착'
-  const eta = status && 'etaSec' in status ? formatEta(status.etaSec) : '-'
+  const { assignment: a, guide, onHome } = props
+  const position =
+    guide?.state === 'PENDING' && guide.queue_position != null ? `${guide.queue_position}번째` : '곧 도착'
+  const eta = guide?.eta_sec != null ? formatEta(guide.eta_sec) : '-'
   return (
     <>
       <div className={s.main}>
         <div className={s.col} style={{ gap: 24 }}>
           <div className={s.okBadge}>
             <CheckIcon />
-            {a.tableId} 테이블은 맡아 두었어요
+            {tableName(a.tableId)} 테이블은 맡아 두었어요
           </div>
           <h1 className={s.title40} style={{ margin: 0, lineHeight: 1.3 }}>
             로봇이 모두 안내 중이에요
@@ -156,7 +156,7 @@ export function K3RobotWaiting(props: {
 
 /* K4 안내 시작 (SR-006·007) */
 export function K4GuideStart(props: {
-  assignment: TableAssignment
+  assignment: Seat
   secondsLeft: number
   totalSeconds: number
   onHome: () => void
@@ -170,13 +170,13 @@ export function K4GuideStart(props: {
           <h1 className={s.title44} style={{ margin: 0 }}>
             로봇을 따라
             <br />
-            <span className={s.accent}>{a.tableId}</span> 테이블로 가세요
+            <span className={s.accent}>{tableName(a.tableId)}</span> 테이블로 가세요
           </h1>
           <div className={s.guideSteps}>
             <div className={s.guideStep}>
               <span className={s.guideNum}>1</span>
               <span>
-                로봇 화면에 <b>{a.tableId}</b>가 떠 있는 로봇이에요
+                로봇 화면에 <b>{tableName(a.tableId)}</b>이 떠 있는 로봇이에요
               </span>
             </div>
             <div className={s.guideStep}>
@@ -188,7 +188,7 @@ export function K4GuideStart(props: {
           </div>
         </div>
         <RobotPanel bubble="저를 따라오세요!">
-          <Robot pose="guide" label={a.tableId} />
+          <Robot pose="guide" label={tableName(a.tableId)} />
         </RobotPanel>
       </div>
       <div className={s.footer} style={{ gap: 20 }}>

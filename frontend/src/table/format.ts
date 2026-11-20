@@ -1,4 +1,4 @@
-import type { ItemStatus } from '../api'
+import type { OrderStatus } from '../api'
 
 /** 18000 → "18,000원" */
 export function won(n: number) {
@@ -24,10 +24,50 @@ export function subjectJosa(word: string) {
   return code % 28 === 0 ? '가' : '이'
 }
 
-export const ITEM_STATUS_TEXT: Record<ItemStatus, { text: string; accent: boolean }> = {
-  queued: { text: '조리 대기', accent: false },
-  cooking: { text: '로봇팔이 조리 중', accent: false },
-  ready: { text: '서빙 준비 완료', accent: true },
-  serving: { text: '로봇이 가져가는 중', accent: true },
-  served: { text: '전달 완료', accent: false },
+/** 장바구니 한 줄 — WEB-04 items 항목과 같은 모양 */
+export interface CartLine {
+  menu_id: number
+  qty: number
+}
+
+/** T3 단계 표시: 접수 → 조리 중 → 서빙 → 완료 */
+export type Stage = 'received' | 'cooking' | 'serving' | 'done'
+
+/** orders.status → T3 단계 */
+export function orderStage(status: OrderStatus): Stage {
+  switch (status) {
+    case 'ORDERED':
+    case 'ON_HOLD':
+      return 'received'
+    case 'COOKING':
+    case 'READY':
+      return 'cooking'
+    case 'SERVING':
+    case 'ARRIVED':
+      return 'serving'
+    case 'COMPLETED':
+    case 'CANCELED':
+      return 'done'
+  }
+}
+
+/** T3 메뉴 줄 오른쪽 문구 (시안: 서빙 준비 완료 / 로봇팔이 조리 중) */
+export function itemStatusText(status: OrderStatus, ready: boolean): { text: string; accent: boolean } {
+  switch (status) {
+    case 'ORDERED':
+      return { text: '조리 대기', accent: false }
+    case 'COOKING':
+    case 'READY':
+      return ready ? { text: '서빙 준비 완료', accent: true } : { text: '로봇팔이 조리 중', accent: false }
+    case 'SERVING':
+      return { text: '로봇이 가져가는 중', accent: true }
+    case 'ARRIVED':
+      return { text: '테이블에 도착', accent: true }
+    case 'COMPLETED':
+      return { text: '전달 완료', accent: false }
+    case 'ON_HOLD':
+      return { text: '잠시 멈춤', accent: false }
+    case 'CANCELED':
+      return { text: '주문 취소', accent: false }
+  }
 }

@@ -1,14 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  NoTableAvailableError,
-  createKioskApi,
-  type GuideStatus,
-  type KioskApi,
-  type PartySize,
-  type TableAssignment,
-} from '../api'
-import { Stage } from '../components/Stage'
+import { ApiError, getApi, newRequestKey, type FrybotApi, type GuideProgress } from '../api'
+import { tableSpec } from '../api/storeLayout'
 import c from '../components/customer.module.css'
+import { Stage } from '../components/Stage'
+import type { PartySize, Seat } from './format'
 import { TopBar } from './parts'
 import { K1PartySize, K2TableAssigned, K3RobotWaiting, K4GuideStart } from './screens'
 
@@ -19,21 +14,25 @@ const TOAST_MS = 3000
 
 type Phase =
   | { screen: 'K1' }
-  | { screen: 'K2' | 'K3'; assignment: TableAssignment; status: GuideStatus | null }
-  | { screen: 'K4'; assignment: TableAssignment; secondsLeft: number }
+  | { screen: 'K2' | 'K3'; seat: Seat; visitId: string; guide: GuideProgress | null }
+  | { screen: 'K4'; seat: Seat; secondsLeft: number }
 
 /**
- * 입구 키오스크. 흐름: K1 → K2 → K4, 로봇이 없으면 K2 → K3 → K4.
+ * 입구 키오스크. 흐름: K1 → K2 → K4, 안내 로봇이 없으면 K2 → K3 → K4.
+ *  - 접수: WEB-01 POST /visits  (ASSIGNED면 배정, WAITING이면 빈 테이블 없음)
+ *  - 안내 진행: 상태 변경 구독(WebSocket)의 visit.guide
  * K4에서 10초가 지나거나 "처음으로"를 누르면 K1로 돌아갑니다.
  */
-export function KioskApp({ api: injected }: { api?: KioskApi }) {
-  const api = useMemo(() => injected ?? createKioskApi(), [injected])
+export function KioskApp({ api: injected }: { api?: FrybotApi }) {
+  const api = useMemo(() => injected ?? getApi(), [injected])
   const [phase, setPhase] = useState<Phase>({ screen: 'K1' })
   const [selected, setSelected] = useState<PartySize | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const unsubscribe = useRef<(() => void) | null>(null)
+  // 같은 접수를 다시 보낼 때(응답 유실·결과 불명)는 같은 요청 키를 씀 (WEB-01)
+  const pendingKey = useRef<{ party: PartySize; key: string } | null>(null)
 
   const stopWatching = () => {
     unsubscribe.current?.()
@@ -42,57 +41,70 @@ export function KioskApp({ api: injected }: { api?: KioskApi }) {
 
   const reset = useCallback(() => {
     stopWatching()
+    pendingKey.current = null
     setPhase({ screen: 'K1' })
     setSelected(null)
     setBusy(false)
     setError(null)
   }, [])
 
-  // 화면을 떠날 때 구독 정리
   useEffect(() => stopWatching, [])
 
-  const onStatus = useCallback((assignment: TableAssignment, status: GuideStatus) => {
+  const onGuide = useCallback((seat: Seat, visitId: string, guide: GuideProgress | null) => {
     setPhase((prev) => {
       if (prev.screen === 'K1' || prev.screen === 'K4') return prev
-      if (status.state === 'robot_arrived') {
-        return { screen: 'K4', assignment, secondsLeft: RETURN_SECONDS }
+      if (guide && (guide.state === 'GUIDING' || guide.state === 'ARRIVED')) {
+        stopWatching()
+        return { screen: 'K4', seat, secondsLeft: RETURN_SECONDS }
       }
-      // 한 번 대기(K3)로 갔으면 로봇이 출발해도 K3에 머물다 도착 시 K4로
-      const screen = status.state === 'queued' || prev.screen === 'K3' ? 'K3' : 'K2'
-      return { screen, assignment, status }
+      // 한 번 대기(K3)로 갔으면 로봇이 출발해도 K3에 머물다 도착하면 K4로
+      const screen = guide?.state === 'PENDING' || prev.screen === 'K3' ? 'K3' : 'K2'
+      return { screen, seat, visitId, guide }
     })
-    if (status.state === 'robot_arrived') stopWatching()
   }, [])
 
   const submit = async () => {
     if (!selected || busy) return
+    if (pendingKey.current?.party !== selected) pendingKey.current = { party: selected, key: newRequestKey() }
     setBusy(true)
     setError(null)
     try {
-      const assignment = await api.assignTable(selected)
-      setPhase({ screen: 'K2', assignment, status: null })
-      unsubscribe.current = api.watchGuide(assignment.assignmentId, (st) => onStatus(assignment, st))
+      const res = await api.createVisit({ party_size: selected, request_key: pendingKey.current.key })
+      pendingKey.current = null
+      if (res.status === 'WAITING' || res.table_id == null) {
+        setSelected(null)
+        setError(
+          `지금은 빈 자리가 없어요. 대기 ${res.queue_no ?? '-'}번으로 접수했어요. 자리가 나면 직원이 불러 드릴게요`,
+        )
+        return
+      }
+      const seat: Seat = {
+        tableId: res.table_id,
+        seats: tableSpec(res.table_id)?.seats ?? selected,
+        partySize: selected,
+      }
+      setPhase({ screen: 'K2', seat, visitId: res.visit_id, guide: null })
+      unsubscribe.current = api.subscribe([{ visit_id: res.visit_id }], (e) => {
+        if (e.type === 'visit') onGuide(seat, res.visit_id, e.data.guide)
+      })
     } catch (e) {
+      const code = e instanceof ApiError ? e.code : 'UNKNOWN'
+      if (code !== 'RESULT_UNCONFIRMED' && code !== 'NETWORK') pendingKey.current = null
       setError(
-        e instanceof NoTableAvailableError
-          ? '지금은 맞는 자리가 없어요. 직원 호출을 눌러 주세요'
-          : '자리를 찾지 못했어요. 잠시 후 다시 눌러 주세요',
+        code === 'RESULT_UNCONFIRMED' || code === 'NETWORK'
+          ? '접수 결과를 확인하지 못했어요. 한 번 더 눌러 주세요'
+          : code === 'VISIT_NOT_ALLOWED'
+            ? '지금은 접수할 수 없어요. 직원 호출을 눌러 주세요'
+            : '자리를 찾지 못했어요. 잠시 후 다시 눌러 주세요',
       )
     } finally {
       setBusy(false)
     }
   }
 
-  const goHome = () => {
-    if (phase.screen === 'K2' || phase.screen === 'K3') {
-      void api.cancelAssignment(phase.assignment.assignmentId).catch(() => {})
-    }
-    reset()
-  }
-
   const callStaff = async () => {
     try {
-      await api.callStaff(phase.screen === 'K1' ? 'party_over_4' : 'help')
+      await api.callStaff('kiosk')
       setToast('직원을 불렀어요. 잠시만 기다려 주세요')
     } catch {
       setToast('직원 호출에 실패했어요. 다시 눌러 주세요')
@@ -127,21 +139,22 @@ export function KioskApp({ api: injected }: { api?: KioskApi }) {
       <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%' }}>
         <TopBar step={step} onCallStaff={callStaff} />
         {phase.screen === 'K1' && (
-          <K1PartySize selected={selected} busy={busy} error={error} onSelect={setSelected} onSubmit={submit} />
-        )}
-        {phase.screen === 'K2' && (
-          <K2TableAssigned
-            assignment={phase.assignment}
-            status={phase.status?.state === 'robot_coming' ? phase.status : null}
-            onHome={goHome}
+          <K1PartySize
+            selected={selected}
+            busy={busy}
+            error={error}
+            onSelect={(n) => {
+              setSelected(n)
+              setError(null)
+            }}
+            onSubmit={submit}
           />
         )}
-        {phase.screen === 'K3' && (
-          <K3RobotWaiting assignment={phase.assignment} status={phase.status} onHome={goHome} />
-        )}
+        {phase.screen === 'K2' && <K2TableAssigned assignment={phase.seat} guide={phase.guide} onHome={reset} />}
+        {phase.screen === 'K3' && <K3RobotWaiting assignment={phase.seat} guide={phase.guide} onHome={reset} />}
         {phase.screen === 'K4' && (
           <K4GuideStart
-            assignment={phase.assignment}
+            assignment={phase.seat}
             secondsLeft={phase.secondsLeft}
             totalSeconds={RETURN_SECONDS}
             onHome={reset}

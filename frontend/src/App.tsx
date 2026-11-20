@@ -1,5 +1,6 @@
 import { BrowserRouter, Link, Route, Routes, useParams } from 'react-router-dom'
 import { KioskApp } from './kiosk/KioskApp'
+import { tableSpec } from './api/storeLayout'
 import { TableApp } from './table/TableApp'
 
 /**
@@ -26,7 +27,7 @@ function Home() {
   const links = [
     { to: '/kiosk', label: '입구 키오스크', note: 'K1~K4' },
     { to: '/kiosk?robot=busy', label: '입구 키오스크 · 로봇 대기 흐름', note: 'K1→K2→K3→K4' },
-    { to: '/table/T3', label: '테이블 태블릿 (T3 테이블)', note: 'T1~T5' },
+    { to: '/table/3', label: '테이블 태블릿 (3번 테이블)', note: 'T1~T5' },
     { to: '/admin', label: '관리자 PC', note: 'A1~A3 · 준비 중' },
   ]
   return (
@@ -60,8 +61,11 @@ function Home() {
 
 function TableRoute() {
   const { tableId = '' } = useParams()
+  // "/table/5" 또는 "/table/T5" 모두 5번 테이블
+  const id = Number(tableId.replace(/^t/i, ''))
+  if (!tableSpec(id)) return <Placeholder title={`없는 테이블이에요 (${tableId})`} />
   // 주소가 바뀌면 다른 테이블이므로 상태를 새로 시작
-  return <TableApp key={tableId} tableId={tableId.toUpperCase()} />
+  return <TableApp key={id} tableId={id} />
 }
 
 function Placeholder({ title }: { title: string }) {
