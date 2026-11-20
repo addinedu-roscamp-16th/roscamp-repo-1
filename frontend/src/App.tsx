@@ -62,7 +62,7 @@ function Placeholder({ title }: { title: string }) {
   )
 }
 
-/** 목업 데이터로 보는 중임을 모든 화면 구석에 표시 (진짜 서버와 헷갈리지 않게) */
+/** 목업 데이터로 보는 중임을 모든 화면 구석에 표시 (서버와 헷갈리지 않게) */
 function MockBadge() {
   return (
     <div

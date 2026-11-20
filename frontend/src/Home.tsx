@@ -2,8 +2,8 @@ import { getDataMode, MOCK_BASE, type DataMode } from './api'
 
 /**
  * 화면 목록. 화면마다 버튼 하나.
- * 위쪽에서 "진짜 서버 / 목업 데이터"를 고르면 목록 전체가 그쪽 주소로 바뀝니다
- * (진짜 서버 = 기본 주소 /, 목업 = /mock). 목업은 개발 서버에서만.
+ * 위쪽에서 "서버 / 목업 데이터"를 고르면 목록 전체가 그쪽 주소로 바뀝니다
+ * (서버 = 기본 주소 /, 목업 = /mock). 목업은 개발 서버에서만.
  */
 export function Home({ mode = getDataMode() }: { mode?: DataMode }) {
   // 배포 빌드에서는 목업 관련 부분이 통째로 빠짐
@@ -39,7 +39,7 @@ export function Home({ mode = getDataMode() }: { mode?: DataMode }) {
         <nav aria-label="데이터" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
           <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: '#fff' }}>
             <a href="/" aria-current={!mock ? 'page' : undefined} style={seg(!mock, false)}>
-              진짜 서버
+              서버
             </a>
             <a href={MOCK_BASE} aria-current={mock ? 'page' : undefined} style={seg(mock, true)}>
               목업 데이터

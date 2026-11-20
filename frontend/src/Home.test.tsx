@@ -17,7 +17,7 @@ describe('화면 목록', () => {
   it('화면마다 버튼 하나, 위에서 고른 쪽 주소로 열린다', () => {
     const { unmount } = render(<Home mode="server" />)
     expect(screen.getByRole('link', { name: /입구 키오스크/ })).toHaveAttribute('href', '/kiosk')
-    expect(screen.getByRole('link', { name: '진짜 서버' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: '서버' })).toHaveAttribute('aria-current', 'page')
     unmount()
 
     render(<Home mode="mock" />)

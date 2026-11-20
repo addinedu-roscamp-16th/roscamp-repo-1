@@ -20,7 +20,7 @@ interface Step {
   no: number
   title: string
   iface: string
-  /** 이 요청을 쓰는 화면 (진짜 서버 주소) */
+  /** 이 요청을 쓰는 화면 (서버 주소) */
   screen: { label: string; path: string } | null
   /** 자동 확인. 없으면 화면에서 직접 확인 */
   auto?: (ctx: { visitId: string | null }) => Promise<Result>
@@ -248,7 +248,7 @@ export function ApiCheck() {
               {s.screen && (
                 <div style={{ display: 'flex', gap: 12, fontSize: 14 }}>
                   <span style={{ color: 'var(--c-text-sub)' }}>{s.screen.label}:</span>
-                  <a href={s.screen.path}>진짜 서버로 열기</a>
+                  <a href={s.screen.path}>서버로 열기</a>
                   <a href={MOCK_BASE + s.screen.path}>목업에서 보기</a>
                 </div>
               )}
