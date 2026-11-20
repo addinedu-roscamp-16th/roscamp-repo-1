@@ -1,0 +1,52 @@
+/* 디자인 토큰 — design/gui/README.md "디자인 규칙 (고객 화면 K·T)" */
+:root {
+  --c-bg: #ffffff;
+  --c-surface: #f4f5f7; /* 면 색 */
+  --c-line: #e3e6eb; /* 진행 바 빈 칸, 테두리 */
+  --c-text: #191c21; /* 본문 글자 */
+  --c-text-sub: #5c6370; /* 보조 글자 */
+  --c-text-btn: #3a404b; /* 보조 버튼 글자 */
+  --c-accent: #f0640f; /* 포인트 주황 (주 버튼 배경) */
+  --c-accent-text: #c2410c; /* 주황 글자 */
+  --c-accent-soft: #fff1e7; /* 연한 주황 */
+  --c-ok-bg: #eaf7ef;
+  --c-ok-text: #17703f;
+  --c-ok-icon: #1f9254;
+  --c-backdrop: #e9ebef; /* 화면 바깥 여백 */
+
+  --font: 'Noto Sans KR', system-ui, sans-serif;
+  --robot-panel: radial-gradient(
+    120% 70% at 50% 100%,
+    rgb(255, 227, 207) 0%,
+    rgb(255, 244, 236) 55%,
+    rgb(255, 248, 243) 100%
+  );
+
+  font-family: var(--font);
+  letter-spacing: -0.02em;
+  color: var(--c-text);
+  background: var(--c-backdrop);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+button {
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  cursor: default;
+}

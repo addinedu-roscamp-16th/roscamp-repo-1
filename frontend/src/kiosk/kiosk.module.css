@@ -1,0 +1,228 @@
+/* 입구 키오스크 K1~K4 — 시안 수치(px)를 그대로 옮김. Stage가 932×572 기준으로 늘립니다. */
+
+.steps {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.step {
+  width: 28px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--c-line);
+}
+.stepOn {
+  background: var(--c-accent);
+}
+/* ── 본문 ── */
+.main {
+  flex-grow: 1;
+  min-height: 0;
+  padding: 12px 40px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 32px;
+}
+.mainWide {
+  grid-template-columns: minmax(0, 1fr) 400px;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+}
+.eyebrow {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--c-accent-text);
+}
+.title40 {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.title44 {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.accent {
+  color: var(--c-accent-text);
+}
+.sub {
+  font-size: 18px;
+  color: var(--c-text-sub);
+}
+.hint {
+  font-size: 15px;
+  color: var(--c-text-sub);
+}
+.hint b {
+  color: var(--c-text-btn);
+}
+.error {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-accent-text);
+}
+
+/* K1 인원 버튼 */
+.partyGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.partyBtn {
+  height: 120px;
+  border-radius: 22px;
+  border: 3px solid transparent;
+  background: var(--c-surface);
+  color: var(--c-text);
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+}
+.partyBtn[aria-pressed='true'] {
+  border-color: var(--c-accent);
+  background: var(--c-accent-soft);
+  color: var(--c-accent-text);
+}
+.partyNum {
+  font-size: 44px;
+  font-weight: 800;
+}
+.partyUnit {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* K2 정보 칩 */
+.chips {
+  display: flex;
+  gap: 8px;
+}
+.chip {
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--c-surface);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--c-text-btn);
+}
+
+/* K2 로봇 진행 카드 */
+.robotCard {
+  margin-top: auto;
+  border-radius: 22px;
+  background: var(--c-surface);
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.robotCardBody {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.robotCardHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.robotCardHead b {
+  font-size: 19px;
+}
+.robotCardHead span {
+  font-size: 15px;
+  color: var(--c-text-sub);
+}
+/* K3 */
+.okBadge {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 8px 10px;
+  border-radius: 12px;
+  background: var(--c-ok-bg);
+  color: var(--c-ok-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.stat {
+  border-radius: 22px;
+  background: var(--c-surface);
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stat span {
+  font-size: 16px;
+  color: var(--c-text-sub);
+}
+.stat b {
+  font-size: 38px;
+  font-weight: 800;
+}
+
+/* K4 안내 단계 */
+.guideSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.guideStep {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: var(--c-surface);
+  font-size: 17px;
+  line-height: 1.5;
+}
+.guideNum {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  background: var(--c-text);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── 오른쪽 패널 ── */
+.mapPanel {
+  border-radius: 28px;
+  background: var(--c-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── 하단 ── */
+.footer {
+  flex-shrink: 0;
+  padding: 24px 40px 32px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.footerNote {
+  font-size: 16px;
+  color: var(--c-text-sub);
+}

@@ -1,0 +1,18 @@
+.backdrop {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-backdrop);
+}
+
+.frame {
+  transform-origin: top left;
+  border-radius: 24px;
+  background: var(--c-bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}

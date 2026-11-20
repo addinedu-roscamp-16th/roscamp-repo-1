@@ -1,0 +1,477 @@
+/* 테이블 태블릿 T1~T5 — 시안 수치(px)를 그대로 옮김. Stage가 932×572 기준으로 늘립니다. */
+
+.topBarArrived {
+  background: var(--c-accent-soft);
+}
+.tableBadge {
+  margin-left: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--c-text);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+}
+.screenLabel {
+  margin-left: auto;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--c-text-sub);
+}
+.screenLabelAccent {
+  color: var(--c-accent-text);
+}
+.staffBtnOnSoft {
+  background: #fff;
+}
+
+/* ── 본문 ── */
+.main {
+  flex-grow: 1;
+  min-height: 0;
+  padding: 12px 40px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 28px;
+}
+.mainMenu {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 220px;
+}
+.mainArrived {
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.title36 {
+  margin: 0;
+  font-size: 36px;
+  font-weight: 800;
+}
+.title44 {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.accent {
+  color: var(--c-accent-text);
+}
+.panelBubble {
+  left: 20px;
+  top: 20px;
+}
+
+/* ── T1 메뉴 ── */
+.menuArea {
+  grid-column: 1 / 3;
+  gap: 18px;
+}
+.menuGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.menuCard {
+  border-radius: 24px;
+  background: var(--c-surface);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.menuPhoto {
+  height: 150px;
+  border-radius: 16px;
+  background: repeating-linear-gradient(
+    45deg,
+    rgb(236, 238, 242) 0px,
+    rgb(236, 238, 242) 10px,
+    rgb(229, 232, 237) 10px,
+    rgb(229, 232, 237) 20px
+  );
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--c-text-sub);
+}
+.menuInfo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+.menuInfo b {
+  font-size: 22px;
+}
+.menuInfo span {
+  font-size: 16px;
+  color: var(--c-text-sub);
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border-radius: 16px;
+  padding: 6px;
+}
+.stepper b {
+  font-size: 22px;
+}
+.stepBtn {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 0;
+  background: var(--c-surface);
+  color: var(--c-text-btn);
+  font-size: 24px;
+  font-weight: 700;
+}
+.stepBtnPlus {
+  background: var(--c-accent-soft);
+  color: var(--c-accent-text);
+}
+.stepBtn:disabled {
+  opacity: 0.4;
+}
+
+/* ── 하단 ── */
+.footer {
+  flex-shrink: 0;
+  padding: 20px 40px 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cartSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cartSummary span {
+  font-size: 15px;
+  color: var(--c-text-sub);
+}
+.cartSummary b {
+  font-size: 22px;
+}
+.btn72 {
+  height: 72px;
+  border-radius: 20px;
+  font-size: 22px;
+}
+.btnSide {
+  width: 200px;
+  height: 72px;
+  border-radius: 20px;
+  border: 0;
+  background: var(--c-surface);
+  color: var(--c-text-btn);
+  font-size: 19px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.note15 {
+  font-size: 15px;
+  color: var(--c-text-sub);
+}
+.note16 {
+  font-size: 16px;
+  color: var(--c-text-sub);
+}
+.retryLink {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--c-accent-text);
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+.footerBtns {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+}
+.footerBtns > button {
+  margin-left: 0;
+}
+
+/* ── T2 주문 확인 ── */
+.receipt {
+  border-radius: 24px;
+  background: var(--c-surface);
+  padding: 6px 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+.receiptRow {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  font-size: 19px;
+}
+.receiptRow b,
+.receiptTotal b {
+  margin-left: auto;
+}
+.receiptRowSmall {
+  font-size: 17px;
+}
+.muted {
+  color: var(--c-text-sub);
+}
+.divider {
+  height: 1px;
+  margin: 4px 20px;
+  background: var(--c-line);
+}
+.receiptTotal {
+  display: flex;
+  align-items: baseline;
+  padding: 12px 20px 16px;
+}
+.receiptTotal span {
+  font-size: 19px;
+  font-weight: 700;
+}
+.receiptTotal b {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--c-accent-text);
+}
+.error {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-accent-text);
+}
+
+/* ── T3 진행 상태 ── */
+.etaLabel {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--c-text-sub);
+}
+.etaRow {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.etaTime {
+  font-size: 48px;
+  font-weight: 800;
+}
+.etaIn {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--c-accent-text);
+}
+.stages {
+  display: flex;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 72px;
+  flex-shrink: 0;
+  font-size: 16px;
+  color: var(--c-text-sub);
+}
+.stageDot {
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--c-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stageDone {
+  color: var(--c-text);
+  font-weight: 700;
+}
+.stageDone .stageDot {
+  background: var(--c-accent);
+}
+.stageNow {
+  color: var(--c-accent-text);
+  font-weight: 800;
+}
+.stageNow .stageDot {
+  background: #fff;
+  box-shadow:
+    rgb(240, 100, 15) 0 0 0 4px inset,
+    rgb(255, 227, 207) 0 0 0 6px;
+}
+.stageNowCore {
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--c-accent);
+}
+.stageLine {
+  flex-grow: 1;
+  height: 4px;
+  margin-top: 14px;
+  border-radius: 2px;
+  background: var(--c-line);
+}
+.stageLineOn {
+  background: var(--c-accent);
+}
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.itemRow {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  border-radius: 18px;
+  background: var(--c-surface);
+  font-size: 18px;
+}
+.itemStatus {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--c-text-sub);
+}
+.itemStatusAccent {
+  color: var(--c-accent-text);
+}
+
+/* ── T4 음식 도착 ── */
+.warn {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgb(255, 246, 219);
+  color: rgb(122, 75, 0);
+  font-size: 17px;
+  font-weight: 700;
+}
+.deliverySteps {
+  border-radius: 24px;
+  background: var(--c-surface);
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  list-style: none;
+}
+.deliveryStep {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 18px;
+  color: var(--c-text-sub);
+}
+.deliveryDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  background: rgb(213, 217, 224);
+  flex-shrink: 0;
+}
+.deliveryDone {
+  color: var(--c-text);
+}
+.deliveryDone .deliveryDot {
+  background: var(--c-accent);
+}
+.deliveryNow {
+  color: var(--c-text);
+  font-weight: 800;
+}
+.deliveryNow .deliveryDot {
+  background: var(--c-accent);
+  box-shadow: rgb(255, 227, 207) 0 0 0 6px;
+}
+
+/* ── T5 이용 종료 ── */
+.dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(25, 28, 33, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialog {
+  width: 520px;
+  background: #fff;
+  border-radius: 32px;
+  padding: 28px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.dialogTitle {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+}
+.dialogBody {
+  font-size: 17px;
+  color: var(--c-text-sub);
+  line-height: 1.6;
+}
+.dialogBtns {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+.dialogBtns > button {
+  height: 68px;
+  border-radius: 20px;
+  border: 0;
+  font-weight: 700;
+}
+.dialogKeep {
+  background: var(--c-surface);
+  color: var(--c-text-btn);
+  font-size: 19px;
+}
+.dialogEnd {
+  background: var(--c-accent);
+  color: #fff;
+  font-size: 22px;
+}
+
+/* 이용 종료 후 화면 (시안에 없음 — 고객 화면 규칙에 맞춰 추가) */
+.ended {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
