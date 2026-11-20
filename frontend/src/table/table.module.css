@@ -188,6 +188,16 @@
   font-size: 16px;
   color: var(--c-text-sub);
 }
+.retryLink {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--c-accent-text);
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: underline;
+}
 .footerBtns {
   margin-left: auto;
   display: flex;

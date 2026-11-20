@@ -180,3 +180,17 @@ describe('표시 형식', () => {
     expect(won(36000)).toBe('36,000원')
   })
 })
+
+describe('서버 연결이 안 될 때', () => {
+  it('메뉴를 못 불러오면 안내와 다시 불러오기 버튼이 나오고, 누르면 다시 부른다', async () => {
+    const getMenu = vi.fn().mockRejectedValueOnce(new ApiError('NETWORK')).mockResolvedValueOnce([
+      { menu_id: 1, name: '치킨', price: 18000, is_available: true },
+    ])
+    const f = fakeApi({ getMenu })
+    f.seed(tableOf(), visitOf())
+    render(<TableApp tableId={3} api={f.api} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('메뉴를 불러오지 못했어요')
+    await userEvent.setup().click(screen.getByRole('button', { name: '다시 불러오기' }))
+    expect(await screen.findByRole('button', { name: '치킨 더하기' })).toBeInTheDocument()
+  })
+})

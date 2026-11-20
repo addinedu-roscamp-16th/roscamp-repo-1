@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { getAdminApi, newRequestKey, type AdminApi, type AdminOverview } from '../api'
 import { Stage } from '../components/Stage'
 import { AlarmsReplay } from './AlarmsReplay'
-import { Ctx, opKey, useAdmin, type AdminCtx, type RunOp } from './context'
+import { Ctx, EMPTY_OVERVIEW, opKey, useAdmin, type AdminCtx, type RunOp } from './context'
 import { C, hhmmss } from './labels'
 import { Monitoring } from './Monitoring'
 import s from './admin.module.css'
@@ -19,6 +19,8 @@ export function AdminApp({ api: injected, pollMs = 300 }: { api?: AdminApi; poll
   const api = useMemo(() => injected ?? getAdminApi(), [injected])
   const [ov, setOv] = useState<AdminOverview | null>(null)
   const [connected, setConnected] = useState(true)
+  /** 처음 연결을 몇 초 기다렸는데도 현황이 없음 */
+  const [waitedLong, setWaitedLong] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'error'; id: number } | null>(null)
   const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(new Set())
@@ -26,6 +28,10 @@ export function AdminApp({ api: injected, pollMs = 300 }: { api?: AdminApi; poll
   const pendingKeys = useRef(new Map<string, string>())
 
   useEffect(() => api.subscribeOverview(setOv, setConnected), [api])
+  useEffect(() => {
+    const t = setTimeout(() => setWaitedLong(true), 4000)
+    return () => clearTimeout(t)
+  }, [])
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
@@ -73,7 +79,7 @@ export function AdminApp({ api: injected, pollMs = 300 }: { api?: AdminApi; poll
   )
 
   const ctx = useMemo<AdminCtx>(
-    () => ({ api, ov, connected, now, run, notify, busy: (r) => busyKeys.has(opKey(r)) }),
+    () => ({ api, ov: ov ?? EMPTY_OVERVIEW, hasData: ov != null, connected, now, run, notify, busy: (r) => busyKeys.has(opKey(r)) }),
     [api, ov, connected, now, run, notify, busyKeys],
   )
 
@@ -83,16 +89,13 @@ export function AdminApp({ api: injected, pollMs = 300 }: { api?: AdminApi; poll
         <div className={s.root}>
           <Header />
           <div className={s.body}>
-            {!ov ? (
-              <p className={s.loading}>현황을 불러오는 중…</p>
-            ) : (
-              <Routes>
-                <Route index element={<Monitoring />} />
-                <Route path="tables" element={<TablesOrders />} />
-                <Route path="alarms" element={<AlarmsReplay />} />
-              </Routes>
-            )}
+            <Routes>
+              <Route index element={<Monitoring />} />
+              <Route path="tables" element={<TablesOrders />} />
+              <Route path="alarms" element={<AlarmsReplay />} />
+            </Routes>
           </div>
+          <ConnectionNotice hasData={ov != null} connected={connected} waitedLong={waitedLong} lastAt={ov?.server_time ?? null} />
           {toast && (
             <div key={toast.id} role={toast.tone === 'error' ? 'alert' : 'status'} className={`${s.toast} ${toast.tone === 'error' ? s.toastError : ''}`}>
               {toast.text}
@@ -148,5 +151,29 @@ function Header() {
         <span className={s.user}>admin</span>
       </div>
     </header>
+  )
+}
+
+/** 서버와 연결이 안 될 때 무엇을 확인할지 알려 줌. 연결되면 사라짐 */
+function ConnectionNotice({ hasData, connected, waitedLong, lastAt }: { hasData: boolean; connected: boolean; waitedLong: boolean; lastAt: string | null }) {
+  if (hasData && connected) return null
+  if (!hasData && connected && !waitedLong)
+    return (
+      <div role="status" className={s.notice}>
+        <b>서버에 연결하는 중…</b>
+      </div>
+    )
+  return (
+    <div role="alert" className={`${s.notice} ${s.noticeBad}`}>
+      <b>{hasData ? `서버와 연결이 끊겼어요 · ${hhmmss(lastAt ?? Date.now())}에 받은 정보를 보여 주는 중` : '백엔드 서버에 연결되지 않았어요'}</b>
+      <span>
+        서버가 켜져 있는지, <code>frontend/.env</code>의 <code>BACKEND_URL</code> 주소가 맞는지 확인해 주세요. 연결되면 화면이 저절로 채워져요.
+      </span>
+      {!hasData && (
+        <Link to="/" className={s.link}>
+          첫 화면에서 가짜 데이터로 바꾸기
+        </Link>
+      )}
+    </div>
   )
 }

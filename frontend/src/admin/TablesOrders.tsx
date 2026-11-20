@@ -24,8 +24,7 @@ const MENU_COOK: Record<number, CookType> = { 1: 'FRY', 2: 'WOK' }
 
 /** A2 테이블 · 주문 · 조리 */
 export function TablesOrders() {
-  const { ov: maybe } = useAdmin()
-  const ov = maybe!
+  const { ov } = useAdmin()
   const count = (st: TableStatus) => ov.tables.filter((t) => t.status === st).length
   const seats = ov.tables.reduce((n, t) => n + t.seats, 0)
   return (
@@ -53,6 +52,7 @@ export function TablesOrders() {
           <div style={{ flexGrow: 1 }} />
           <span className={s.small}>상태 변경 시 중복 배정 여부를 먼저 검사합니다</span>
         </div>
+        {ov.tables.length === 0 && <p className={s.muted}>테이블 정보가 없어요</p>}
         <div className={s.tableGrid}>
           {[...ov.tables]
             .sort((a, b) => a.table_id - b.table_id)

@@ -41,12 +41,13 @@ const KIND_SHORT: Record<RouteKind, string> = { pick: '픽업', serve: '서빙',
 
 /** A1 통합 관제 */
 export function Monitoring() {
-  const { ov: maybe, now } = useAdmin()
-  const ov = maybe!
+  const { ov, now } = useAdmin()
   const amrs = ov.robots.filter(isAmr)
   const arms = ov.robots.filter(isArm)
   const [tab, setTab] = useState<'AMR' | 'ARM'>('AMR')
-  const [selected, setSelected] = useState<string>(() => amrs.find((r) => r.task_id)?.robot_id ?? amrs[0]?.robot_id ?? '')
+  const [picked, setSelected] = useState<string>('')
+  // 고른 게 없으면 일하는 AMR → 첫 AMR (서버 현황이 늦게 와도 자동으로 골라짐)
+  const selected = picked || (amrs.find((r) => r.task_id)?.robot_id ?? amrs[0]?.robot_id ?? '')
   const [view, setView] = useState<'3d' | 'top'>('3d')
   const [filter, setFilter] = useState<RouteKind | 'all'>('all')
   const [frozen, setFrozen] = useState<AdminOverview | null>(null)
@@ -109,6 +110,7 @@ export function Monitoring() {
             </div>
           </div>
           <ul className={s.targetList}>
+            {list.length === 0 && <li className={s.emptyRow}>{tab === 'AMR' ? 'AMR 정보가 없어요' : '로봇팔 정보가 없어요'}</li>}
             {list.map((r) => (
               <TargetRow key={r.robot_id} r={r} ov={ov} on={r.robot_id === selected} onPick={() => setSelected(r.robot_id)} />
             ))}
@@ -166,6 +168,7 @@ export function Monitoring() {
               }}
               label="매장 지도: AMR 위치와 남은 경로"
             />
+            {bots.length > 0 && (
             <div className={s.legend}>
               {bots.map((b) => (
                 <span key={b.id}>
@@ -173,12 +176,13 @@ export function Monitoring() {
                 </span>
               ))}
             </div>
+            )}
           </div>
           <TaskQueue ov={ov} now={now} />
         </main>
 
         <aside aria-label="상세" className={s.detail}>
-          {sel ? isAmr(sel) ? <AmrDetail r={sel} ov={ov} now={now} /> : <ArmDetail a={sel} /> : <p className={s.muted}>대상을 골라 주세요</p>}
+          {sel ? isAmr(sel) ? <AmrDetail r={sel} ov={ov} now={now} /> : <ArmDetail a={sel} /> : <p className={s.muted}>{ov.robots.length ? '대상을 골라 주세요' : '표시할 로봇이 없어요'}</p>}
           <RecentAlarms ov={ov} />
         </aside>
       </div>

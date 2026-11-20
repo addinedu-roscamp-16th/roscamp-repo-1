@@ -35,8 +35,7 @@ const isBad = (e: EventLogRow) => e.entity === 'INCIDENT' || e.to_state === 'CAN
 
 /** A3 알람 · 이력 (Replay) */
 export function AlarmsReplay() {
-  const { ov: maybe, api, now } = useAdmin()
-  const ov = maybe!
+  const { ov, api, now } = useAdmin()
   const [params, setParams] = useSearchParams()
   const [level, setLevel] = useState<LevelFilter>('ALL')
   const alarms = ov.alarms.filter((a) => level === 'ALL' || a.level === level)
@@ -52,6 +51,7 @@ export function AlarmsReplay() {
   const [events, setEvents] = useState<EventLogRow[]>([])
   const [frames, setFrames] = useState<ReplayFrame[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [t, setT] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
@@ -67,6 +67,13 @@ export function AlarmsReplay() {
         setEvents(ev)
         setFrames(fr)
         setT(at ?? (fr.length ? Date.parse(fr[0].t) : from))
+        setLoadError(false)
+      } catch {
+        setLoadError(true)
+        setEvents([])
+        setFrames([])
+        setRange({ from, to })
+        setT(from)
       } finally {
         setLoading(false)
       }
@@ -206,6 +213,11 @@ export function AlarmsReplay() {
         <div className={s.a3Cols}>
           <section aria-label="알람 상세" className={s.alarmDetail}>
             {sel ? <AlarmDetail a={sel} ov={ov} onReplay={() => jumpTo(sel.occurred_at)} /> : <p className={s.muted}>알람을 골라 주세요</p>}
+            {loadError && (
+              <p role="alert" className={s.small} style={{ color: C.red, marginTop: 16 }}>
+                이력을 불러오지 못했어요. 서버 연결을 확인한 뒤 조회를 다시 눌러 주세요.
+              </p>
+            )}
             <h3 className={s.h3}>
               조회 결과 {shown.length}건{range ? ` · ${hhmm(new Date(range.from).toISOString())} ~ ${hhmm(new Date(range.to).toISOString())}` : ''}
             </h3>

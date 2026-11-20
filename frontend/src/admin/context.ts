@@ -6,7 +6,10 @@ export type RunOp = (req: Omit<OperationRequest, 'request_key'>, doneText: strin
 
 export interface AdminCtx {
   api: AdminApi
-  ov: AdminOverview | null
+  /** 서버에서 받은 현황. 아직 못 받았으면 빈 현황 */
+  ov: AdminOverview
+  /** 서버에서 현황을 한 번이라도 받았는지 */
+  hasData: boolean
   connected: boolean
   /** 화면 시계(ms). 가짜 서버면 서버 시각 */
   now: number
@@ -25,3 +28,15 @@ export function useAdmin() {
 }
 
 export const opKey = (r: Omit<OperationRequest, 'request_key'>) => `${r.kind}:${r.target_id}:${r.params?.status ?? ''}`
+
+/** 서버에서 아무것도 못 받았을 때 화면 틀만 그리는 빈 현황 */
+export const EMPTY_OVERVIEW: AdminOverview = {
+  server_time: new Date(0).toISOString(),
+  ros_connected: false,
+  robots: [],
+  tables: [],
+  orders: [],
+  tasks: [],
+  alarms: [],
+  version: -1,
+}

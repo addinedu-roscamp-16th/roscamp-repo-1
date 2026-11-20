@@ -148,3 +148,30 @@ describe('A3 알람 · 이력', () => {
     expect(screen.getByRole('button', { name: '일시정지' })).toBeInTheDocument()
   })
 })
+
+describe('서버에 연결되지 않을 때', () => {
+  it('화면 틀은 그대로 보이고, 무엇을 확인할지 알려 준다', async () => {
+    const api: AdminApi = {
+      getOverview: () => Promise.reject(new Error('down')),
+      requestOperation: vi.fn(),
+      getOperation: vi.fn(),
+      subscribeOverview: (_cb, onConnection) => {
+        onConnection?.(false)
+        return () => {}
+      },
+      getEvents: () => Promise.reject(new Error('down')),
+      getReplay: () => Promise.reject(new Error('down')),
+    }
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminApp api={api} pollMs={0} />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('백엔드 서버에 연결되지 않았어요')
+    expect(screen.getByText('AMR 0대')).toBeInTheDocument()
+    expect(screen.getByText('표시할 로봇이 없어요')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '첫 화면에서 가짜 데이터로 바꾸기' })).toBeInTheDocument()
+  })
+})

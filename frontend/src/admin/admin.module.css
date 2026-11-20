@@ -39,10 +39,6 @@
   display: flex;
   flex-direction: column;
 }
-.loading {
-  padding: 40px;
-  color: var(--muted);
-}
 
 /* ── 공통 ── */
 .muted {
@@ -243,6 +239,43 @@
   background: var(--raised);
 }
 
+/* ── 서버 연결 안내 ── */
+.notice {
+  position: absolute;
+  left: 50%;
+  top: 72px;
+  transform: translateX(-50%);
+  width: 720px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--raised);
+  border: 1px solid var(--line2);
+  box-shadow: 0 8px 24px #0009;
+  z-index: 45;
+  font-size: 13px;
+  color: var(--sub);
+}
+.notice b {
+  font-size: 15px;
+  color: var(--text);
+}
+.notice code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+.noticeBad {
+  background: #2a1512;
+  border-color: #7a2a20;
+}
+.noticeBad b {
+  color: #ff8a78;
+}
+
 /* ── 알림 ── */
 .toast {
   position: absolute;
@@ -387,6 +420,10 @@
   height: 6px;
   border-radius: 3px;
   background: #ff8a78;
+}
+.emptyRow {
+  padding: 16px;
+  color: var(--muted);
 }
 .sideFoot {
   margin: auto 0 0;

@@ -42,16 +42,29 @@ export function TableApp({ tableId, api: injected }: { tableId: number; api?: Fr
   const orderKey = useRef<string | null>(null)
   const endKey = useRef<string | null>(null)
 
+  const [menuFailed, setMenuFailed] = useState(false)
+  const [menuTry, setMenuTry] = useState(0)
   useEffect(() => {
     let alive = true
+    let retry: ReturnType<typeof setTimeout> | null = null
     api
       .getMenu(tableId)
-      .then((m) => alive && setMenu(m))
-      .catch(() => alive && setToast('메뉴를 불러오지 못했어요. 직원을 불러 주세요'))
+      .then((m) => {
+        if (!alive) return
+        setMenu(m)
+        setMenuFailed(false)
+      })
+      .catch(() => {
+        if (!alive) return
+        setMenuFailed(true)
+        // 서버가 늦게 켜져도 저절로 다시 불러옴
+        retry = setTimeout(() => setMenuTry((n) => n + 1), 5000)
+      })
     return () => {
       alive = false
+      if (retry) clearTimeout(retry)
     }
-  }, [api, tableId])
+  }, [api, tableId, menuTry])
 
   useEffect(
     () =>
@@ -204,6 +217,8 @@ export function TableApp({ tableId, api: injected }: { tableId: number; api?: Fr
     body = (
       <T1Menu
         menu={menu}
+        menuFailed={menuFailed}
+        onRetryMenu={() => setMenuTry((n) => n + 1)}
         cart={cart}
         hasOrders={orders.length > 0}
         canOrder={visit != null}

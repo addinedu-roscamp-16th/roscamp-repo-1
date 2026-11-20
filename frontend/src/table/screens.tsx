@@ -42,6 +42,9 @@ function RobotSide({ bubble, children }: { bubble: string; children: ReactNode }
 /* T1 메뉴 선택 (SR-009·010) */
 export function T1Menu(props: {
   menu: MenuItem[] | null
+  /** 메뉴를 못 불러옴 → 다시 불러오기 */
+  menuFailed?: boolean
+  onRetryMenu?: () => void
   cart: CartLine[]
   hasOrders: boolean
   /** 진행 중 방문이 있어야 주문할 수 있음 */
@@ -50,7 +53,7 @@ export function T1Menu(props: {
   onNext: () => void
   onStatus: () => void
 }) {
-  const { menu, cart, hasOrders, canOrder, onChange, onNext, onStatus } = props
+  const { menu, menuFailed, onRetryMenu, cart, hasOrders, canOrder, onChange, onNext, onStatus } = props
   const qtyOf = (id: number) => cart.find((l) => l.menu_id === id)?.qty ?? 0
   const count = cart.reduce((n, l) => n + l.qty, 0)
   const total = cartTotal(menu ?? [], cart)
@@ -60,7 +63,15 @@ export function T1Menu(props: {
       <div className={`${s.main} ${s.mainMenu}`}>
         <div className={`${s.col} ${s.menuArea}`}>
           <h1 className={s.title36}>무엇을 드실래요?</h1>
-          {!menu && <div className={s.note16}>메뉴를 불러오는 중…</div>}
+          {!menu && !menuFailed && <div className={s.note16}>메뉴를 불러오는 중…</div>}
+          {!menu && menuFailed && (
+            <div role="alert" className={s.note16}>
+              메뉴를 불러오지 못했어요. 잠시 뒤 저절로 다시 불러와요.{' '}
+              <button type="button" className={s.retryLink} onClick={onRetryMenu}>
+                다시 불러오기
+              </button>
+            </div>
+          )}
           <div className={s.menuGrid}>
             {menu?.map((m) => {
               const q = qtyOf(m.menu_id)
