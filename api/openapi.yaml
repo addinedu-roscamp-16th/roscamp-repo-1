@@ -1,0 +1,754 @@
+openapi: 3.1.0
+info:
+  title: FryBot Web Service API
+  version: 0.1.0
+  description: |
+    화면(키오스크·테이블 태블릿·관리자 PC) ↔ Web Service 계약. **이 파일이 기준**입니다.
+
+    - 출처: Confluence "1) FryBot I/F 목록"(WEB-01~09, 상태 변경 구독)과 "4) Logical Data Model"(상태 이름), 2026-11-20 설계 검토안.
+    - 문서가 "확인 필요"로 남긴 형식은 여기서 정한 제안값이며, 설명에 **[제안]** 으로 표시했습니다.
+    - 바꿀 때는 이 파일을 먼저 고치고 → 프론트 `npm run gen:api` → 백엔드도 같은 모양으로 맞춥니다.
+
+    오류 응답은 모두 `{"error": {"code": "...", "message": "..."}}` 모양입니다(`Error`).
+    결과를 모를 때(타임아웃 등)는 503 `RESULT_UNCONFIRMED` — 화면은 같은 `request_key`로 다시 보냅니다.
+
+    실시간 상태 변경은 WebSocket `GET /ws` 입니다(OpenAPI로는 표현이 안 돼 아래 "WebSocket" 설명과
+    `SubscribeMessage`·`ServerEvent`·`AdminEvent` 스키마로 적습니다).
+servers:
+  - url: /api
+    description: 화면은 /api 로 요청합니다. 백엔드도 /api 아래에 엽니다(예 FastAPI `APIRouter(prefix="/api")`).
+# 인증: 아직 없음(매장 내부망). 관리자 조작(/admin/*)의 인증 방식은 팀과 정해야 함 [확인 필요]
+security: []
+tags:
+  - name: 손님 화면
+    description: 입구 키오스크(K1~K4) · 테이블 태블릿(T1~T5)
+  - name: 관리자
+    description: 관리자 PC(A1~A3)
+  - name: 진단
+    description: 서버 상태
+
+paths:
+  /health:
+    get:
+      tags: [진단]
+      summary: 서버 상태 확인 (진단 상태 조회)
+      operationId: getHealth
+      responses:
+        '200':
+          description: 서버가 살아 있음
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+  /menu:
+    get:
+      tags: [손님 화면]
+      summary: WEB-03 메뉴 조회
+      operationId: getMenu
+      parameters:
+        - name: table_id
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/TableId' }
+      responses:
+        '200':
+          description: 메뉴 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MenuItem' }
+
+  /tables:
+    get:
+      tags: [손님 화면]
+      summary: 테이블 현황 조회 — 태블릿은 자기 테이블의 visit_id를 여기서 찾음 [제안]
+      operationId: getTables
+      responses:
+        '200':
+          description: 테이블 목록 (1~6번)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DiningTable' }
+
+  /visits:
+    post:
+      tags: [손님 화면]
+      summary: WEB-01 방문 등록 (입구 접수)
+      operationId: createVisit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVisitRequest' }
+      responses:
+        '200':
+          description: ASSIGNED(테이블 배정) 또는 WAITING(대기 번호)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateVisitResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+
+  /visits/{visit_id}/status:
+    get:
+      tags: [손님 화면]
+      summary: WEB-02 방문 상태 조회 (안내 진행·주문 포함 스냅샷)
+      operationId: getVisit
+      parameters:
+        - $ref: '#/components/parameters/VisitId'
+      responses:
+        '200':
+          description: 방문 스냅샷
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VisitSnapshot' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /orders:
+    post:
+      tags: [손님 화면]
+      summary: WEB-04 주문 등록
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderRequest' }
+      responses:
+        '200':
+          description: 접수됨
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateOrderResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+
+  /visits/{visit_id}/end:
+    post:
+      tags: [손님 화면]
+      summary: WEB-06 방문 종료 (이용 종료)
+      operationId: endVisit
+      parameters:
+        - $ref: '#/components/parameters/VisitId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [request_key]
+              properties:
+                request_key: { type: string }
+      responses:
+        '200':
+          description: ACCEPTED(종료 접수) 또는 PENDING(확인 근거가 없어 보류)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EndVisitResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+
+  /staff-calls:
+    post:
+      tags: [손님 화면]
+      summary: 직원 호출 — I/F 목록에 없음 [제안]
+      operationId: callStaff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaffCallRequest' }
+      responses:
+        '204': { description: 접수됨 }
+
+  /admin/overview:
+    get:
+      tags: [관리자]
+      summary: WEB-07 관리자 현황 조회 (로봇·테이블·주문·임무·알람 한 번에) [제안 필드 구성]
+      operationId: getAdminOverview
+      responses:
+        '200':
+          description: 현황
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOverview' }
+
+  /admin/operations:
+    post:
+      tags: [관리자]
+      summary: WEB-08 관리자 조작 요청
+      operationId: requestOperation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OperationRequest' }
+      responses:
+        '200':
+          description: ACCEPTED 수락 · CONFLICT 다른 상태와 충돌 · PENDING 확인 중
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperationAccepted' }
+
+  /admin/operations/{operation_id}:
+    get:
+      tags: [관리자]
+      summary: WEB-09 관리자 조작 결과 조회
+      operationId: getOperation
+      parameters:
+        - name: operation_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 실제 조작 결과 · 실패 · 불명
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperationStatus' }
+
+  /admin/events:
+    get:
+      tags: [관리자]
+      summary: 운영 이력 조회 (event_log) — I/F 목록에 없음 [제안]
+      operationId: getEvents
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: 기간 안의 이력 (오래된 것부터)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EventLogRow' }
+
+  /admin/replay:
+    get:
+      tags: [관리자]
+      summary: Replay용 로봇 위치 (초당 1장) — I/F 목록에 없음 [제안]
+      operationId: getReplay
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: 기간 안의 위치 기록
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ReplayFrame' }
+
+components:
+  parameters:
+    VisitId:
+      name: visit_id
+      in: path
+      required: true
+      schema: { type: string }
+    From:
+      name: from
+      in: query
+      required: true
+      schema: { type: string, format: date-time }
+    To:
+      name: to
+      in: query
+      required: true
+      schema: { type: string, format: date-time }
+
+  responses:
+    Error:
+      description: 오류
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    # ── 공통 ──
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code]
+          properties:
+            code: { $ref: '#/components/schemas/ApiErrorCode' }
+            message: { type: string }
+    ApiErrorCode:
+      type: string
+      enum: [INVALID_INPUT, VISIT_NOT_ALLOWED, REQUEST_KEY_CONFLICT, RESULT_UNCONFIRMED, MENU_UNAVAILABLE, NOT_FOUND]
+    Health:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        ros_connected: { type: boolean }
+
+    # ── 기준 정보 ──
+    TableId:
+      type: integer
+      minimum: 1
+      maximum: 6
+      description: dining_table.table_id — 맵 구성도의 1~6번
+    TableStatus:
+      type: string
+      enum: [AVAILABLE, ASSIGNED, IN_USE, CLEANING]
+    DiningTable:
+      type: object
+      required: [table_id, code, seats, status, visit_id]
+      properties:
+        table_id: { $ref: '#/components/schemas/TableId' }
+        code: { type: string, description: '예 "T5"' }
+        seats: { type: integer }
+        status: { $ref: '#/components/schemas/TableStatus' }
+        visit_id:
+          type: [string, 'null']
+          description: 이 테이블의 진행 중 방문 (ASSIGNED·IN_USE일 때) [제안]
+    MenuItem:
+      type: object
+      required: [menu_id, name, price, is_available]
+      properties:
+        menu_id: { type: integer }
+        name: { type: string }
+        price:
+          type: [integer, 'null']
+          description: 원. menu.price는 DB 제안 단계라 없을 수 있음 → 화면은 금액 표시를 보류
+        is_available: { type: boolean }
+        image_url: { type: [string, 'null'], description: '[제안]' }
+
+    # ── 방문 ──
+    VisitStatus:
+      type: string
+      enum: [CHECK_IN, WAITING, ASSIGNED, IN_USE, END_OF_USE]
+    CreateVisitRequest:
+      type: object
+      required: [party_size, request_key]
+      properties:
+        party_size: { type: integer, minimum: 1, maximum: 4 }
+        request_key: { type: string, description: '버튼 확정 1회마다 새로 만들고, 결과를 모를 때 다시 보낼 때는 같은 값' }
+    CreateVisitResponse:
+      type: object
+      required: [visit_id, status, table_id, queue_no]
+      properties:
+        visit_id: { type: string }
+        status: { type: string, enum: [WAITING, ASSIGNED] }
+        table_id:
+          oneOf: [{ $ref: '#/components/schemas/TableId' }, { type: 'null' }]
+        queue_no: { type: [integer, 'null'] }
+    GuideProgress:
+      type: object
+      description: |
+        안내 진행 (task GUIDE + 안내 AMR의 robot.state) [제안]
+        PENDING 가용 AMR 없음(K3) · TO_ENTRANCE 입구로 오는 중(K2) · GUIDING 안내 시작(K4) · ARRIVED 착석 · EXCEPTION 손님을 놓침
+      required: [state, robot_id, queue_position, eta_sec, progress]
+      properties:
+        state: { type: string, enum: [PENDING, TO_ENTRANCE, GUIDING, ARRIVED, EXCEPTION] }
+        robot_id: { type: [string, 'null'] }
+        queue_position: { type: [integer, 'null'], description: PENDING일 때 안내 대기 순번 }
+        eta_sec: { type: [integer, 'null'], description: 남은 예상 시간(초). 모르면 null }
+        progress: { type: [number, 'null'], minimum: 0, maximum: 1, description: TO_ENTRANCE 진행률 }
+    VisitSnapshot:
+      type: object
+      required: [visit_id, status, party_size, table_id, queue_no, guide, can_end, orders, version]
+      properties:
+        visit_id: { type: string }
+        status: { $ref: '#/components/schemas/VisitStatus' }
+        party_size: { type: integer }
+        table_id:
+          oneOf: [{ $ref: '#/components/schemas/TableId' }, { type: 'null' }]
+        queue_no: { type: [integer, 'null'] }
+        guide:
+          oneOf: [{ $ref: '#/components/schemas/GuideProgress' }, { type: 'null' }]
+        can_end: { type: boolean, description: 이용 종료를 받을 수 있는지 (미전달 주문이 없을 때) }
+        orders:
+          type: array
+          items: { $ref: '#/components/schemas/Order' }
+        version: { type: integer, description: 관측 버전 — 클수록 최신 }
+    EndVisitResponse:
+      type: object
+      required: [result, collect_required]
+      properties:
+        result: { type: string, enum: [ACCEPTED, PENDING], description: 'PENDING: 확인 근거가 없어 보류 [제안]' }
+        collect_required: { type: boolean, description: 식기 회수 필요 여부 }
+
+    # ── 주문 ──
+    OrderStatus:
+      type: string
+      enum: [ORDERED, COOKING, READY, SERVING, ARRIVED, COMPLETED, ON_HOLD, CANCELED]
+    OrderItem:
+      type: object
+      required: [order_item_id, menu_id, name, qty, ready_at]
+      properties:
+        order_item_id: { type: string }
+        menu_id: { type: integer }
+        name: { type: string }
+        qty: { type: integer, minimum: 1 }
+        ready_at: { type: [string, 'null'], format: date-time, description: 서빙 준비 완료(받는 곳) 시각 }
+    Order:
+      type: object
+      required: [order_id, table_id, status, items, created_at, eta_at, delivery_step]
+      properties:
+        order_id: { type: string, description: '예 "ORD-0012"' }
+        table_id: { $ref: '#/components/schemas/TableId' }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        created_at: { type: string, format: date-time }
+        eta_at: { type: [string, 'null'], format: date-time, description: '도착 예정 시각. 없으면 null [제안]' }
+        delivery_step:
+          type: [string, 'null']
+          enum: [STOPPED, TRANSFERRING, DONE, null]
+          description: 'ARRIVED 단계의 전달 진행 (TransferObject) [제안]'
+    CreateOrderRequest:
+      type: object
+      required: [visit_id, table_id, items, request_key]
+      properties:
+        visit_id: { type: string }
+        table_id: { $ref: '#/components/schemas/TableId' }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [menu_id, qty]
+            properties:
+              menu_id: { type: integer }
+              qty: { type: integer, minimum: 1 }
+        request_key: { type: string }
+    CreateOrderResponse:
+      type: object
+      required: [order_id, status]
+      properties:
+        order_id: { type: string }
+        status: { type: string, enum: [ORDERED] }
+    StaffCallRequest:
+      type: object
+      required: [source, table_id]
+      properties:
+        source: { type: string, enum: [kiosk, table] }
+        table_id:
+          oneOf: [{ $ref: '#/components/schemas/TableId' }, { type: 'null' }]
+
+    # ── WebSocket (GET /ws) ──
+    Topic:
+      description: 구독 대상. 방문 하나, 테이블 하나, 또는 관리자 현황 전체
+      oneOf:
+        - type: object
+          required: [visit_id]
+          properties: { visit_id: { type: string } }
+        - type: object
+          required: [table_id]
+          properties: { table_id: { $ref: '#/components/schemas/TableId' } }
+        - type: object
+          required: [admin]
+          properties: { admin: { type: boolean, const: true } }
+    SubscribeMessage:
+      description: 브라우저 → 서버. 연결 직후 보냄 [제안]
+      type: object
+      required: [type, topics]
+      properties:
+        type: { type: string, const: subscribe }
+        topics:
+          type: array
+          items: { $ref: '#/components/schemas/Topic' }
+    ServerEvent:
+      description: 서버 → 브라우저 (손님 화면). version이 같거나 작으면 화면이 버림 [제안]
+      oneOf:
+        - type: object
+          required: [type, version, data]
+          properties:
+            type: { type: string, const: visit }
+            version: { type: integer }
+            data: { $ref: '#/components/schemas/VisitSnapshot' }
+        - type: object
+          required: [type, version, data]
+          properties:
+            type: { type: string, const: table }
+            version: { type: integer }
+            data: { $ref: '#/components/schemas/DiningTable' }
+    AdminEvent:
+      description: 서버 → 브라우저 (관리자). 최대 2 Hz로 현황 전체 [제안]
+      type: object
+      required: [type, version, data]
+      properties:
+        type: { type: string, const: admin }
+        version: { type: integer }
+        data: { $ref: '#/components/schemas/AdminOverview' }
+
+    # ── 관리자: 로봇 ──
+    AmrState:
+      type: string
+      enum: [IDLE, E_STOP, TO_ENTRANCE, GUIDING, PAUSED, ARRIVED, RETURNING, CHARGING, TO_PICKUP, QUEUED, DOCKED, SERVING]
+    ArmState:
+      type: string
+      enum: [IDLE, E_STOP, PICK_CHICKEN, FRYING, WAIT_TIMER, LIFT_AND_DRAIN, PICK_INGREDIENTS, STIR_FRYING, PLATING, ON_HANDOFF, RETRY, LOADING]
+    CookType:
+      type: string
+      enum: [FRY, WOK]
+    Point:
+      type: array
+      description: '[x, y] ROS map 좌표(m, y 위쪽)'
+      items: { type: number }
+      minItems: 2
+      maxItems: 2
+    AmrView:
+      type: object
+      required: [type, robot_id, state, hold_state, task_id, last_seen_at, pose, battery_pct, is_charging, speed, path]
+      properties:
+        type: { type: string, const: AMR }
+        robot_id: { type: string, description: 'ROS2 네임스페이스와 같음 (pinky1 …)' }
+        state: { $ref: '#/components/schemas/AmrState' }
+        hold_state: { type: [string, 'null'], description: 'PAUSED·E_STOP 직전 상태 [제안]' }
+        task_id: { type: [string, 'null'] }
+        last_seen_at: { type: string, format: date-time }
+        pose:
+          type: object
+          required: [x, y, yaw]
+          properties:
+            x: { type: number }
+            y: { type: number }
+            yaw: { type: number, description: rad }
+        battery_pct: { type: integer }
+        is_charging: { type: boolean }
+        speed: { type: number, description: 'm/s [제안]' }
+        path:
+          type: array
+          description: '남은 계획 경로 [제안]'
+          items: { $ref: '#/components/schemas/Point' }
+    ArmView:
+      type: object
+      required: [type, robot_id, cook_type, state, hold_state, task_id, last_seen_at, cook]
+      properties:
+        type: { type: string, const: ARM }
+        robot_id: { type: string, description: 'cook_arm_a(튀김) · cook_arm_b(웍)' }
+        cook_type: { $ref: '#/components/schemas/CookType' }
+        state: { $ref: '#/components/schemas/ArmState' }
+        hold_state: { type: [string, 'null'] }
+        task_id: { type: [string, 'null'] }
+        last_seen_at: { type: string, format: date-time }
+        cook:
+          description: '지금 조리 중인 것 [제안]'
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [order_id, name, qty, step, steps, remaining_sec]
+              properties:
+                order_id: { type: string }
+                name: { type: string }
+                qty: { type: integer }
+                step: { type: integer, description: 1부터 }
+                steps: { type: integer }
+                remaining_sec: { type: integer }
+    RobotView:
+      oneOf:
+        - $ref: '#/components/schemas/AmrView'
+        - $ref: '#/components/schemas/ArmView'
+      discriminator:
+        propertyName: type
+        mapping:
+          AMR: '#/components/schemas/AmrView'
+          ARM: '#/components/schemas/ArmView'
+
+    # ── 관리자: 임무·테이블·주문 ──
+    TaskType:
+      type: string
+      enum: [GUIDE, COOK, SERVE]
+    TaskState:
+      type: string
+      enum: [GUIDE_REQ, GUIDE_PENDING, GUIDE_EXCEPTION, COOK_TASK, SERVE_REQ, SERVE_PENDING, ON_HOLD, RECOVERY_WAIT, CHECK, RESUME, CANCEL_TASK, REASSIGN, CANCELED]
+    AdminTask:
+      type: object
+      required: [task_id, task_type, state, robot_id, visit_id, order_id, table_id, party_size, pickup, created_at, assigned_at, finished_at, robot_states]
+      properties:
+        task_id: { type: string }
+        task_type: { $ref: '#/components/schemas/TaskType' }
+        state: { $ref: '#/components/schemas/TaskState' }
+        robot_id: { type: [string, 'null'] }
+        visit_id: { type: [string, 'null'] }
+        order_id: { type: [string, 'null'] }
+        table_id:
+          oneOf: [{ $ref: '#/components/schemas/TableId' }, { type: 'null' }]
+        party_size: { type: [integer, 'null'], description: '안내 인원 (GUIDE) [제안]' }
+        pickup:
+          oneOf: [{ $ref: '#/components/schemas/CookType' }, { type: 'null' }]
+          description: '받을 곳 (SERVE) [제안]'
+        created_at: { type: string, format: date-time }
+        assigned_at: { type: [string, 'null'], format: date-time }
+        finished_at: { type: [string, 'null'], format: date-time, description: 완료 표시 }
+        robot_states:
+          type: array
+          description: '이 임무 동안 로봇 상태가 바뀐 시각 (event_log) [제안]'
+          items:
+            type: object
+            required: [state, at]
+            properties:
+              state: { type: string }
+              at: { type: string, format: date-time }
+    AdminTable:
+      allOf:
+        - $ref: '#/components/schemas/DiningTable'
+        - type: object
+          required: [visit]
+          properties:
+            visit:
+              oneOf:
+                - type: 'null'
+                - type: object
+                  required: [visit_id, party_size, status, checked_in_at, seated_at, ended_at]
+                  properties:
+                    visit_id: { type: string }
+                    party_size: { type: integer }
+                    status: { $ref: '#/components/schemas/VisitStatus' }
+                    checked_in_at: { type: string, format: date-time }
+                    seated_at: { type: [string, 'null'], format: date-time }
+                    ended_at: { type: [string, 'null'], format: date-time }
+    AdminOrder:
+      allOf:
+        - $ref: '#/components/schemas/Order'
+        - type: object
+          required: [visit_id]
+          properties:
+            visit_id: { type: string }
+
+    # ── 관리자: 알람 ──
+    AlarmLevel:
+      type: string
+      enum: [ERROR, WARN, INFO]
+    Incident:
+      type: object
+      description: 오류·관리자 중단 기록 (incident)
+      required: [incident_id, source, device_part, task_id, order_id, table_id, failed_state, failed_step, hint, admin_choice, result, resolved_at]
+      properties:
+        incident_id: { type: string }
+        source: { type: string, enum: [DEVICE_ERROR, ADMIN_STOP] }
+        device_part: { type: [string, 'null'], description: '장치 부위 [제안] 예 "적재 · 전달"' }
+        task_id: { type: [string, 'null'] }
+        order_id: { type: [string, 'null'] }
+        table_id:
+          oneOf: [{ $ref: '#/components/schemas/TableId' }, { type: 'null' }]
+        failed_state: { type: [string, 'null'], description: 실패한 작업 단계(당시 robot.state) }
+        failed_step: { type: [string, 'null'], description: '사람이 읽는 실패 단계 [제안]' }
+        hint: { type: [string, 'null'], description: '재시도 전 확인할 것 [제안]' }
+        admin_choice: { type: [string, 'null'], enum: [RETRY, STOP, null] }
+        result: { type: [string, 'null'], enum: [RESUME, REASSIGN, CANCELED, null] }
+        resolved_at: { type: [string, 'null'], format: date-time }
+    Alarm:
+      type: object
+      required: [alarm_id, level, source, code, message, occurred_at, acked, incident]
+      properties:
+        alarm_id: { type: string }
+        level: { $ref: '#/components/schemas/AlarmLevel' }
+        source: { type: string, description: "robot_id 또는 'SYSTEM'" }
+        code: { type: string, description: '오류 코드 (SR-036) 예 E-ARM-021' }
+        message: { type: string }
+        occurred_at: { type: string, format: date-time }
+        acked: { type: boolean }
+        incident:
+          oneOf: [{ $ref: '#/components/schemas/Incident' }, { type: 'null' }]
+
+    AdminOverview:
+      type: object
+      required: [server_time, ros_connected, robots, tables, orders, tasks, alarms, version]
+      properties:
+        server_time: { type: string, format: date-time }
+        ros_connected: { type: boolean, description: 'Web Service ↔ ROS2 연결 [제안]' }
+        robots:
+          type: array
+          items: { $ref: '#/components/schemas/RobotView' }
+        tables:
+          type: array
+          items: { $ref: '#/components/schemas/AdminTable' }
+        orders:
+          type: array
+          description: 진행 중 + 최근 완료
+          items: { $ref: '#/components/schemas/AdminOrder' }
+        tasks:
+          type: array
+          description: 진행 중 + 대기
+          items: { $ref: '#/components/schemas/AdminTask' }
+        alarms:
+          type: array
+          description: 최근 알람 (새것부터)
+          items: { $ref: '#/components/schemas/Alarm' }
+        version: { type: integer }
+
+    # ── 관리자: 조작 (WEB-08 · WEB-09) ──
+    OperationKind:
+      type: string
+      enum: [PAUSE, RESUME, REASSIGN, E_STOP, SET_TABLE_STATUS, INCIDENT_RETRY, INCIDENT_STOP, ACK_ALARM]
+      description: |
+        PAUSE·RESUME·REASSIGN·E_STOP → 로봇(target_id=robot_id)
+        SET_TABLE_STATUS → 테이블(target_id=table_id, params.status)
+        INCIDENT_RETRY·INCIDENT_STOP → 오류 처리(target_id=alarm_id, incident.admin_choice RETRY/STOP)
+        ACK_ALARM → 알람 읽음(target_id=alarm_id)
+    OperationRequest:
+      type: object
+      required: [kind, target_id, request_key]
+      properties:
+        kind: { $ref: '#/components/schemas/OperationKind' }
+        target_id: { type: string }
+        params:
+          type: object
+          properties:
+            status: { $ref: '#/components/schemas/TableStatus' }
+        request_key: { type: string }
+    OperationAccepted:
+      type: object
+      required: [operation_id, result, reason]
+      properties:
+        operation_id: { type: string }
+        result: { type: string, enum: [ACCEPTED, CONFLICT, PENDING] }
+        reason: { type: [string, 'null'], description: CONFLICT일 때 화면에 보여 줄 이유 }
+    OperationStatus:
+      type: object
+      required: [operation_id, status, message]
+      properties:
+        operation_id: { type: string }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, UNKNOWN] }
+        message: { type: [string, 'null'] }
+
+    # ── 이력·Replay [제안] ──
+    EventLogRow:
+      type: object
+      required: [log_id, entity, entity_id, from_state, to_state, actor, message, detail, created_at]
+      properties:
+        log_id: { type: string }
+        entity: { type: string, enum: [VISIT, TABLE, ORDER, TASK, ROBOT, INCIDENT] }
+        entity_id: { type: string }
+        from_state: { type: [string, 'null'] }
+        to_state: { type: [string, 'null'] }
+        actor: { type: string, enum: [ENTRANCE_UI, TABLE_UI, ADMIN_UI, ORDER_MANAGER, WORKFLOW, AI_SERVER, AMR, ARM] }
+        message: { type: string }
+        detail:
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                task_type: { $ref: '#/components/schemas/TaskType' }
+                alarm_id: { type: string }
+        created_at: { type: string, format: date-time }
+    ReplayFrame:
+      type: object
+      required: [t, robots]
+      properties:
+        t: { type: string, format: date-time }
+        robots:
+          type: array
+          items:
+            type: object
+            required: [robot_id, x, y, state]
+            properties:
+              robot_id: { type: string }
+              x: { type: number }
+              y: { type: number }
+              state: { type: string }

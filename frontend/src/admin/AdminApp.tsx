@@ -171,7 +171,7 @@ function ConnectionNotice({ hasData, connected, waitedLong, lastAt }: { hasData:
       <span>
         서버가 켜져 있는지, <code>frontend/.env</code>의 <code>BACKEND_URL</code> 주소가 맞는지 확인해 주세요. 연결되면 화면이 저절로 채워져요.
       </span>
-      {!hasData && (
+      {import.meta.env.DEV && !hasData && (
         <a href={`${MOCK_BASE}${path}`} className={s.link}>
           서버 없이 목업 데이터로 보기 ({MOCK_BASE}
           {path})

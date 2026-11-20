@@ -10,6 +10,8 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       host: true, // 같은 네트워크의 태블릿에서 접속 가능하도록
+      // 계약 파일(../api/openapi.yaml)을 읽을 수 있게
+      fs: { allow: ['..'] },
       proxy: {
         // 화면의 /api 요청을 백엔드(FastAPI)로 넘깁니다. WebSocket(/api/ws)도 함께.
         '/api': { target: env.BACKEND_URL || 'http://localhost:8000', ws: true },

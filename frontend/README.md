@@ -50,11 +50,13 @@ npm run build      # dist/ 에 배포용 파일
 ```
 src/
   api/                 프론트 ↔ Web Service 경계
-    contract.ts        주고받는 데이터 모양 (Confluence I/F 목록·Logical Data Model 기준)
+    schema.gen.ts      api/openapi.yaml 에서 자동 생성한 타입 (npm run gen:api, 직접 고치지 않음)
+    contract.ts        생성된 타입을 화면에서 쓰는 이름으로 + 손님 화면 API 인터페이스
+    schemaCheck.ts     openapi.yaml 로 응답 모양 검사 (계약 테스트, /check)
     storeLayout.ts     매장 배치 (맵 구성도 2026-11-13, frybot layout.py와 같은 좌표)
     mockApi.ts         서버 없이 매장을 흉내 내는 가짜 Web Service
     httpApi.ts         실제 Web Service(FastAPI) 연결 (VITE_API_MODE=http)
-    adminContract.ts   관리자 화면 데이터 모양 (WEB-07/08/09, robot·task·incident·event_log)
+    adminContract.ts   관리자 화면 타입(생성된 것) + 관리자 API 인터페이스
     adminMock.ts       관리자용 가짜 매장 시뮬레이션 (AMR 3대 pinky1~3, 로봇팔 2대, 길 찾기)
     adminHttp.ts       관리자 화면 ↔ 실제 Web Service
   components/
@@ -69,11 +71,32 @@ src/
 
 ## 백엔드 연결 (FastAPI + rclpy)
 
-Confluence **1) FryBot I/F 목록**(2026-11-20 설계 검토안)을 따릅니다.
+**계약 우선(contract-first)** 으로 갑니다. 화면과 서버가 주고받는 모양의 기준은 저장소의 **[`api/openapi.yaml`](../api/openapi.yaml)** 하나입니다
+(Confluence **1) FryBot I/F 목록**·**4) Logical Data Model**을 옮긴 것, 문서에 없던 것은 `[제안]`).
+
+1. 모양을 바꿀 때는 `api/openapi.yaml` 을 먼저 고칩니다 → `npm run lint:api` 로 문법 확인
+2. 프론트: `npm run gen:api` → `src/api/schema.gen.ts` 가 다시 만들어지고, 타입이 안 맞는 화면 코드는 `npm run build` 에서 바로 드러납니다
+3. 목업이 계약을 지키는지: `npm test` (`src/api/contract.test.ts` — 목업 응답을 openapi.yaml 로 검사)
+4. 백엔드가 계약을 지키는지: 개발 서버의 **`/check`** 화면, 또는 아래 "백엔드 개발자용"
+5. 보기 좋은 문서로 보기: `npm run docs:api` → http://localhost:8090
+
 `/mock` 이 없는 주소의 화면은 `/api/*` 요청과 WebSocket(`/api/ws`)을 백엔드로 넘깁니다.
 백엔드 주소는 `frontend/.env` 의 `BACKEND_URL` 한 줄 (`.env.example` 을 복사해서 만들기, 없으면 `http://localhost:8000`).
 주소를 바꾼 뒤에는 `npm run dev` 를 껐다 켜야 합니다.
-JSON 필드는 `src/api/contract.ts`에 있습니다. 문서가 "확인 필요"로 남긴 형식은 `[제안]`으로 표시했습니다.
+목업(`/mock`)과 `/check` 는 개발 서버에서만 있고, 배포 파일(`npm run build`)에는 들어가지 않습니다.
+
+### 백엔드 개발자용
+
+- 서버는 `/api` 아래에 엽니다 (FastAPI: `app.include_router(router, prefix="/api")`).
+- Pydantic 모델은 계약에서 만들 수 있습니다:
+  `pip install datamodel-code-generator` → `datamodel-codegen --input api/openapi.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --output models.py`
+- FastAPI 를 켜면 `http://localhost:8000/docs` 에서 주소마다 직접 요청을 보내 시험할 수 있습니다 (화면 없이).
+- 계약 테스트(서버 응답이 openapi.yaml 과 같은지 자동 검사):
+  `pip install schemathesis` → `st run api/openapi.yaml --url http://localhost:8000/api --include-method GET`
+  (POST 는 손님 접수·주문이 실제로 생겨 로봇이 움직일 수 있으니 시뮬레이터에서만 돌리세요)
+- 붙이는 순서와 지금 상태는 개발 서버의 `/check` 화면 (서버 켜짐 → 메뉴 → 테이블 → 접수 → 방문 상태 → 실시간 알림 → 주문 → 이용 종료 → 관리자).
+
+요약 표 (자세한 모양은 openapi.yaml):
 
 | I/F | 경로 | 화면 |
 |---|---|---|

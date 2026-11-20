@@ -1,6 +1,6 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Link, Route, Routes, useParams } from 'react-router-dom'
 import { AdminApp } from './admin/AdminApp'
-import { ApiCheck } from './check/ApiCheck'
 import { KioskApp } from './kiosk/KioskApp'
 import { getDataMode, MOCK_BASE } from './api'
 import { tableSpec } from './api/storeLayout'
@@ -14,8 +14,11 @@ import { TableApp } from './table/TableApp'
  *   /admin         관리자 PC — A1 통합 관제, /admin/tables A2, /admin/alarms A3
  * 같은 주소 앞에 /mock 을 붙이면 목업 데이터로 봅니다 (예: /mock/kiosk). 화면 구성은 똑같습니다.
  */
+/** 백엔드 연결 점검(/check)은 개발 서버에서만. 배포 빌드에는 들어가지 않음 */
+const ApiCheck = import.meta.env.DEV ? lazy(() => import('./check/ApiCheck').then((m) => ({ default: m.ApiCheck }))) : null
+
 export default function App() {
-  const mock = getDataMode() === 'mock'
+  const mock = import.meta.env.DEV && getDataMode() === 'mock'
   return (
     <BrowserRouter basename={mock ? MOCK_BASE : undefined}>
       {mock && <MockBadge />}
@@ -24,7 +27,16 @@ export default function App() {
         <Route path="/kiosk" element={<KioskApp />} />
         <Route path="/table/:tableId" element={<TableRoute />} />
         <Route path="/admin/*" element={<AdminApp />} />
-        <Route path="/check" element={<ApiCheck />} />
+        {ApiCheck && (
+          <Route
+            path="/check"
+            element={
+              <Suspense fallback={null}>
+                <ApiCheck />
+              </Suspense>
+            }
+          />
+        )}
         <Route path="*" element={<Placeholder title="없는 주소예요" />} />
       </Routes>
     </BrowserRouter>

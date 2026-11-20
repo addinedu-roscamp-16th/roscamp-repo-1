@@ -11,7 +11,7 @@ describe('백엔드 연결 점검', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
-        if (url === '/api/health') return json(200, { ok: true })
+        if (url === '/api/health') return json(200, { ok: true, ros_connected: true })
         if (url === '/api/menu') return json(200, [{ menu_id: 1, name: '치킨', is_available: true }]) // price 빠짐
         if (url === '/api/tables') return json(200, [])
         return json(404, {})
@@ -29,9 +29,9 @@ describe('백엔드 연결 점검', () => {
     )
     render(<ApiCheck />)
     const step = (name: string) => screen.getByRole('listitem', { name })
-    expect(await within(step('1단계 서버 켜짐')).findByText('됨')).toBeInTheDocument()
-    expect(await within(step('2단계 메뉴')).findByText('빠진 칸: price')).toBeInTheDocument()
-    expect(await within(step('3단계 테이블 목록')).findByText('됨 · 테이블 0개')).toBeInTheDocument()
+    expect(await within(step('1단계 서버 켜짐')).findByText('됨 · 모양 맞음')).toBeInTheDocument()
+    expect(await within(step('2단계 메뉴')).findByText(/MenuItem 와 다름: \[0\]\.price 칸이 빠졌어요/)).toBeInTheDocument()
+    expect(await within(step('3단계 테이블 목록')).findByText('됨 · 테이블 0개 · 모양 맞음')).toBeInTheDocument()
     expect(await within(step('9단계 관리자 현황')).findByText('아직 없음')).toBeInTheDocument()
     // 접수는 로봇이 움직일 수 있어 자동으로 보내지 않음
     expect(within(step('4단계 입구 접수')).getByText('화면에서 확인')).toBeInTheDocument()

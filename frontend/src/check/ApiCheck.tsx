@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { MOCK_BASE } from '../api'
+import { checkList, checkShape } from '../api/schemaCheck'
 
 /**
  * 백엔드 개발자용 연결 점검 (/check).
@@ -44,12 +45,6 @@ async function getJson(path: string): Promise<{ status: number; body: unknown } 
   }
 }
 
-/** 응답에 화면이 쓰는 칸이 다 있는지 */
-function missingKeys(obj: unknown, keys: string[]) {
-  if (!obj || typeof obj !== 'object') return keys
-  return keys.filter((k) => !(k in (obj as Record<string, unknown>)))
-}
-
 function judge(r: Awaited<ReturnType<typeof getJson>>, check: (body: unknown) => Result): Result {
   if (!r) return { kind: 'down', text: '서버에 닿지 않아요 (서버가 꺼졌거나 BACKEND_URL이 달라요)' }
   if (r.status === 404 || r.status === 405 || r.status === 501) return { kind: 'missing', text: `아직 없어요 (HTTP ${r.status})` }
@@ -59,15 +54,15 @@ function judge(r: Awaited<ReturnType<typeof getJson>>, check: (body: unknown) =>
   return check(r.body)
 }
 
-const listOf = (keys: string[], what: string) => (body: unknown): Result => {
-  if (!Array.isArray(body)) return { kind: 'shape', text: `목록([...])이 와야 해요` }
-  if (body.length === 0) return { kind: 'ok', text: `됨 · ${what} 0개` }
-  const miss = missingKeys(body[0], keys)
-  return miss.length ? { kind: 'shape', text: `빠진 칸: ${miss.join(', ')}` } : { kind: 'ok', text: `됨 · ${what} ${body.length}개` }
+/** api/openapi.yaml 스키마로 응답 모양 검사 (계약 테스트와 같은 검사기) */
+const listOf = (schema: string, what: string) => (body: unknown): Result => {
+  const errs = checkList(schema, body)
+  if (errs.length) return { kind: 'shape', text: `openapi.yaml ${schema} 와 다름: ${errs.join(' · ')}` }
+  return { kind: 'ok', text: `됨 · ${what} ${(body as unknown[]).length}개 · 모양 맞음` }
 }
-const objectOf = (keys: string[]) => (body: unknown): Result => {
-  const miss = missingKeys(body, keys)
-  return miss.length ? { kind: 'shape', text: `빠진 칸: ${miss.join(', ')}` } : { kind: 'ok', text: '됨' }
+const objectOf = (schema: string) => (body: unknown): Result => {
+  const errs = checkShape(schema, body)
+  return errs.length ? { kind: 'shape', text: `openapi.yaml ${schema} 와 다름: ${errs.join(' · ')}` } : { kind: 'ok', text: '됨 · 모양 맞음' }
 }
 
 function checkWebSocket(): Promise<Result> {
@@ -102,7 +97,7 @@ const STEPS: Step[] = [
     title: '서버 켜짐',
     iface: 'GET /health (진단 상태 조회)',
     screen: null,
-    auto: async () => judge(await getJson('/health'), () => ({ kind: 'ok', text: '됨 · 서버가 답해요' })),
+    auto: async () => judge(await getJson('/health'), objectOf('Health')),
     how: '서버를 켜고 이 화면의 "다시 확인"을 누르세요.',
   },
   {
@@ -110,7 +105,7 @@ const STEPS: Step[] = [
     title: '메뉴',
     iface: 'WEB-03 GET /menu',
     screen: { label: '테이블 태블릿 T1', path: '/table/3' },
-    auto: async () => judge(await getJson('/menu'), listOf(['menu_id', 'name', 'price', 'is_available'], '메뉴')),
+    auto: async () => judge(await getJson('/menu'), listOf('MenuItem', '메뉴')),
     how: '태블릿 첫 화면에 메뉴 카드가 보이면 됩니다.',
   },
   {
@@ -118,7 +113,7 @@ const STEPS: Step[] = [
     title: '테이블 목록',
     iface: 'GET /tables',
     screen: { label: '테이블 태블릿', path: '/table/3' },
-    auto: async () => judge(await getJson('/tables'), listOf(['table_id', 'code', 'seats', 'status', 'visit_id'], '테이블')),
+    auto: async () => judge(await getJson('/tables'), listOf('DiningTable', '테이블')),
     how: '태블릿이 자기 테이블에 앉은 손님(visit_id)을 이걸로 찾습니다.',
   },
   {
@@ -137,7 +132,7 @@ const STEPS: Step[] = [
       if (!visitId) return { kind: 'idle' }
       return judge(
         await getJson(`/visits/${encodeURIComponent(visitId)}/status`),
-        objectOf(['visit_id', 'status', 'table_id', 'guide', 'can_end', 'orders', 'version']),
+        objectOf('VisitSnapshot'),
       )
     },
     how: '4번 접수를 한 번 하면(손님이 있는 테이블이 생기면) 자동으로 확인할 수 있어요.',
@@ -170,7 +165,7 @@ const STEPS: Step[] = [
     iface: 'WEB-07 GET /admin/overview',
     screen: { label: '관리자 A1·A2·A3', path: '/admin' },
     auto: async () =>
-      judge(await getJson('/admin/overview'), objectOf(['robots', 'tables', 'orders', 'tasks', 'alarms', 'ros_connected', 'version'])),
+      judge(await getJson('/admin/overview'), objectOf('AdminOverview')),
     how: '관리자 화면에서 "연결 안 됨"이 사라지고 로봇·테이블 상태가 보이면 됩니다.',
   },
   {
@@ -262,8 +257,8 @@ export function ApiCheck() {
         })}
       </ol>
       <p style={{ marginTop: 24, color: 'var(--c-text-sub)', fontSize: 14, lineHeight: 1.7 }}>
-        주고받는 데이터의 칸 하나하나는 <code>frontend/src/api/contract.ts</code>(손님 화면)와 <code>adminContract.ts</code>(관리자)에,
-        주소 표는 <code>frontend/README.md</code>의 "백엔드 연결"에 있어요.
+        기준은 저장소의 <code>api/openapi.yaml</code> 하나예요. 모양 검사도 이 파일로 합니다.
+        보기 좋은 문서로 보려면 <code>frontend</code>에서 <code>npm run docs:api</code>.
       </p>
     </main>
   )

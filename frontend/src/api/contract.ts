@@ -1,181 +1,49 @@
 /**
  * 화면(Web Browser) ↔ Web Service 데이터 계약.
  *
- * 기준 문서 (Confluence, 2026-11-20 설계 검토안):
- *   - 1) FryBot I/F 목록 — WEB-01~09, 상태 변경 구독(WebSocket)
- *   - 4) Logical Data Model — 상태 이름 (visit / dining_table / orders / task / robot)
- *
- * 문서가 "확인 필요"로 남긴 필드명·형식은 여기서 제안한 값입니다(아래 [제안] 표시).
- * 문서가 확정되면 이 파일만 고치면 됩니다.
+ * 데이터 모양은 저장소의 **api/openapi.yaml** 이 기준이고, 여기 타입은 거기서 자동 생성한 것(schema.gen.ts)을
+ * 화면 코드에서 쓰기 편한 이름으로 다시 내보낸 것입니다. 모양을 바꿀 때는 openapi.yaml 을 고치고
+ * `npm run gen:api` 를 실행하세요. (이 파일에서 직접 모양을 바꾸지 않습니다)
  */
+import type { components } from './schema.gen'
+
+type S = components['schemas']
 
 /* ── 기준 정보 ── */
+export type TableId = S['TableId']
+export type TableStatus = S['TableStatus']
+export type DiningTable = S['DiningTable']
+export type MenuItem = S['MenuItem']
 
-/** dining_table.table_id — 맵 구성도의 1~6번 */
-export type TableId = number
+/* ── 방문 ── */
+export type VisitStatus = S['VisitStatus']
+export type CreateVisitRequest = S['CreateVisitRequest']
+export type CreateVisitResponse = S['CreateVisitResponse']
+export type GuideProgress = S['GuideProgress']
+export type VisitSnapshot = S['VisitSnapshot']
+export type EndVisitResponse = S['EndVisitResponse']
 
-/** dining_table.status */
-export type TableStatus = 'AVAILABLE' | 'ASSIGNED' | 'IN_USE' | 'CLEANING'
+/* ── 주문 ── */
+export type OrderStatus = S['OrderStatus']
+export type OrderItem = S['OrderItem']
+export type Order = S['Order']
+export type CreateOrderRequest = S['CreateOrderRequest']
+export type CreateOrderResponse = S['CreateOrderResponse']
 
-/** GET /tables 한 줄 [제안: 필드 구성] */
-export interface DiningTable {
-  table_id: TableId
-  /** dining_table.code, 예 "T5" */
-  code: string
-  seats: number
-  status: TableStatus
-  /** 이 테이블의 진행 중 방문 (ASSIGNED·IN_USE일 때) [제안] */
-  visit_id: string | null
-}
-
-/** GET /menu 한 줄 (WEB-03) */
-export interface MenuItem {
-  menu_id: number
-  name: string
-  /** 원. menu.price는 DB 제안 단계라 없을 수 있음 → 화면은 금액 표시를 보류 */
-  price: number | null
-  is_available: boolean
-  /** [제안] */
-  image_url?: string | null
-}
-
-/* ── 방문 (visit) ── */
-
-/** visit.status */
-export type VisitStatus = 'CHECK_IN' | 'WAITING' | 'ASSIGNED' | 'IN_USE' | 'END_OF_USE'
-
-/** POST /visits 요청 (WEB-01) */
-export interface CreateVisitRequest {
-  party_size: number
-  request_key: string
-}
-
-/** POST /visits 응답 (WEB-01) */
-export interface CreateVisitResponse {
-  visit_id: string
-  status: 'WAITING' | 'ASSIGNED'
-  table_id: TableId | null
-  queue_no: number | null
-}
-
-/**
- * 안내 진행 (task GUIDE + 안내 AMR의 robot.state) [제안: 묶음 형식]
- *  - PENDING     : 가용 AMR 없음 (task.state GUIDE_PENDING) → K3
- *  - TO_ENTRANCE : AMR이 입구로 오는 중 → K2
- *  - GUIDING     : AMR이 입구에 와서 안내 시작 → K4
- *  - ARRIVED     : 테이블 도착 (착석)
- *  - EXCEPTION   : 손님을 놓침 (GUIDE_EXCEPTION)
- */
-export interface GuideProgress {
-  state: 'PENDING' | 'TO_ENTRANCE' | 'GUIDING' | 'ARRIVED' | 'EXCEPTION'
-  robot_id: string | null
-  /** PENDING일 때 안내 대기 순번 */
-  queue_position: number | null
-  /** 남은 예상 시간(초). 모르면 null */
-  eta_sec: number | null
-  /** TO_ENTRANCE 진행률 0~1. 모르면 null */
-  progress: number | null
-}
-
-/** orders.status */
-export type OrderStatus =
-  | 'ORDERED'
-  | 'COOKING'
-  | 'READY'
-  | 'SERVING'
-  | 'ARRIVED'
-  | 'COMPLETED'
-  | 'ON_HOLD'
-  | 'CANCELED'
-
-export interface OrderItem {
-  order_item_id: string
-  menu_id: number
-  name: string
-  qty: number
-  /** order_item.ready_at — 서빙 준비 완료(인계대) 시각 */
-  ready_at: string | null
-}
-
-export interface Order {
-  order_id: string
-  table_id: TableId
-  status: OrderStatus
-  items: OrderItem[]
-  created_at: string
-  /** 도착 예정 시각. ETA는 범위 밖(DB 제안)이라 없으면 null [제안] */
-  eta_at: string | null
-  /**
-   * ARRIVED 단계의 전달 진행 (모바일 로봇팔 TransferObject) [제안]
-   * STOPPED: 정차 확인, TRANSFERRING: 테이블로 옮기는 중, DONE: 전달 완료
-   */
-  delivery_step: 'STOPPED' | 'TRANSFERRING' | 'DONE' | null
-}
-
-/** GET /visits/{visit_id}/status 응답 (WEB-02) [제안: 필드 구성] */
-export interface VisitSnapshot {
-  visit_id: string
-  status: VisitStatus
-  party_size: number
-  table_id: TableId | null
-  queue_no: number | null
-  guide: GuideProgress | null
-  /** 이용 종료 버튼을 받을 수 있는지 (미전달 주문이 없을 때 등) */
-  can_end: boolean
-  orders: Order[]
-  /** 관측 버전 — 값이 클수록 최신 */
-  version: number
-}
-
-/* ── 주문 (WEB-04) ── */
-
-export interface CreateOrderRequest {
-  visit_id: string
-  table_id: TableId
-  items: { menu_id: number; qty: number }[]
-  request_key: string
-}
-
-export interface CreateOrderResponse {
-  order_id: string
-  status: 'ORDERED'
-}
-
-/* ── 방문 종료 (WEB-06) ── */
-
-export interface EndVisitResponse {
-  /** ACCEPTED: 종료 접수, PENDING: 확인 근거가 없어 보류 [제안] */
-  result: 'ACCEPTED' | 'PENDING'
-  /** 식기 회수 필요 여부 */
-  collect_required: boolean
-}
-
-/* ── 상태 변경 구독 (WebSocket) [제안: 메시지 형식] ── */
-
-export type Topic = { visit_id: string } | { table_id: TableId }
-
-/** 브라우저 → 서버 */
+/* ── 상태 변경 구독 (WebSocket /ws) ── */
+/** 손님 화면이 구독하는 대상 (방문 하나 또는 테이블 하나) */
+export type Topic = Exclude<S['Topic'], { admin: true }>
 export interface SubscribeMessage {
   type: 'subscribe'
-  topics: Topic[]
+  topics: S['Topic'][]
 }
-
 /** 서버 → 브라우저. version이 건너뛰거나 거꾸로 오면 스냅샷을 다시 조회합니다. */
-export type ServerEvent =
-  | { type: 'visit'; version: number; data: VisitSnapshot }
-  | { type: 'table'; version: number; data: DiningTable }
+export type ServerEvent = S['ServerEvent']
 
 /* ── 오류 ── */
 
-/** WEB-01 오류 코드 + 공통 */
-export type ApiErrorCode =
-  | 'INVALID_INPUT'
-  | 'VISIT_NOT_ALLOWED'
-  | 'REQUEST_KEY_CONFLICT'
-  | 'RESULT_UNCONFIRMED'
-  | 'MENU_UNAVAILABLE'
-  | 'NETWORK'
-  | 'UNKNOWN'
+/** 서버가 보내는 오류 코드(openapi.yaml ApiErrorCode) + 화면에서만 쓰는 NETWORK·UNKNOWN */
+export type ApiErrorCode = S['ApiErrorCode'] | 'NETWORK' | 'UNKNOWN'
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode

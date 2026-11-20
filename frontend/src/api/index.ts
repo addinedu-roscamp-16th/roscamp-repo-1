@@ -8,7 +8,7 @@ import { getDataMode } from './mode'
 
 export * from './adminContract'
 export * from './contract'
-export { getDataMode, isMockPath, MOCK_BASE, type DataMode } from './mode'
+export { getDataMode, isMockPath, MOCK_BASE, MOCK_ENABLED, type DataMode } from './mode'
 export { tableName } from './storeLayout'
 
 let shared: FrybotApi | null = null
@@ -21,7 +21,8 @@ let shared: FrybotApi | null = null
  */
 export function getApi(): FrybotApi {
   if (shared) return shared
-  if (getDataMode() === 'server') {
+  // import.meta.env.DEV 를 직접 써야 배포 빌드에서 목업 코드가 통째로 빠짐
+  if (!import.meta.env.DEV || getDataMode() === 'server') {
     shared = createHttpApi()
   } else {
     const params = new URLSearchParams(window.location.search)
@@ -34,6 +35,6 @@ let sharedAdmin: AdminApi | null = null
 
 /** 관리자 화면(A1~A3)용 API. 가짜 모드에서는 지난 25분을 미리 돌려 둔 가짜 매장 */
 export function getAdminApi(): AdminApi {
-  sharedAdmin ??= getDataMode() === 'server' ? createHttpAdminApi() : createMockAdminApi()
+  sharedAdmin ??= !import.meta.env.DEV || getDataMode() === 'server' ? createHttpAdminApi() : createMockAdminApi()
   return sharedAdmin
 }
