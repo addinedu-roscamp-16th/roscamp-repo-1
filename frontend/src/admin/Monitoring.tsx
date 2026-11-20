@@ -37,11 +37,20 @@ const FILTERS: { key: RouteKind | 'all'; label: string; color: string }[] = [
   { key: 'guide', label: '안내', color: ROUTE.guide },
   { key: 'back', label: '복귀', color: ROUTE.back },
 ]
-const KIND_SHORT: Record<RouteKind, string> = { pick: '픽업', serve: '서빙', guide: '안내', back: '복귀', idle: '대기', error: '정지' }
+const KIND_SHORT: Record<RouteKind, string> = {
+  pick: '픽업',
+  serve: '서빙',
+  guide: '안내',
+  back: '복귀',
+  idle: '대기',
+  error: '정지',
+}
 
 /** A1 통합 관제 */
 export function Monitoring() {
-  const { ov, now } = useAdmin()
+  const { ov, now, hasData } = useAdmin()
+  /** 서버에서 상태를 아직 못 받음: 구성만 보여 주고 상태는 '연결 안 됨' */
+  const offline = !hasData
   const amrs = ov.robots.filter(isAmr)
   const arms = ov.robots.filter(isArm)
   const [tab, setTab] = useState<'AMR' | 'ARM'>('AMR')
@@ -61,11 +70,11 @@ export function Monitoring() {
     return {
       id: r.robot_id,
       pos: fromMap(r.pose.x, r.pose.y),
-      color: ROUTE[kind],
+      color: offline ? ROUTE.idle : ROUTE[kind],
       label: r.robot_id.replace(/\D/g, ''),
-      sub: r.state === 'PAUSED' ? '중단' : KIND_SHORT[kind],
+      sub: offline ? '—' : r.state === 'PAUSED' ? '중단' : KIND_SHORT[kind],
+      dashed: !offline && r.state === 'PAUSED',
       selected: r.robot_id === selected,
-      dashed: r.state === 'PAUSED',
     }
   })
   const routes: MapRoute[] = shown.robots.filter(isAmr).flatMap((r) => {
@@ -75,23 +84,27 @@ export function Monitoring() {
     return [{ pts, color: ROUTE[kind], dim: filter !== 'all' && filter !== kind }]
   })
   const mapArms: MapArm[] = shown.robots.filter(isArm).map((a) => {
-    const color = a.state === 'E_STOP' ? ROUTE.error : a.cook ? '#22C55E' : '#9CA3AF'
+    const color = offline ? '#9CA3AF' : a.state === 'E_STOP' ? ROUTE.error : a.cook ? '#22C55E' : '#9CA3AF'
     const c = a.cook
     return {
       cook: a.cook_type,
       title: armTitle(a),
-      chip: stateChip(a)[0],
+      chip: stateChip(a, offline)[0],
       color,
-      state: c ? armStateText(a.state) : stateChip(a)[0],
-      order: c ? `${c.order_id} · ${c.name} ${c.qty}` : '조리 대기',
-      step: c ? `${c.step}/${c.steps} ${armStateText(a.state)} · 남은 ${mmss(c.remaining_sec)}` : '받은 주문 없음',
+      state: c ? armStateText(a.state) : stateChip(a, offline)[0],
+      order: c ? `${c.order_id} · ${c.name} ${c.qty}` : offline ? '—' : '조리 대기',
+      step: c
+        ? `${c.step}/${c.steps} ${armStateText(a.state)} · 남은 ${mmss(c.remaining_sec)}`
+        : offline
+          ? '서버 연결 안 됨'
+          : '받은 주문 없음',
       pct: c ? Math.round(((c.step - 1) / c.steps) * 100 + 100 / c.steps / 2) : 0,
     }
   })
 
   return (
     <div className={s.a1}>
-      <SummaryBar ov={ov} now={now} />
+      <SummaryBar ov={ov} now={now} offline={offline} />
       <div className={s.a1Grid}>
         <aside aria-label="대상 목록" className={s.side}>
           <div className={s.sideHead}>
@@ -103,16 +116,31 @@ export function Monitoring() {
             </div>
             <div className={s.seg2} role="tablist">
               {(['AMR', 'ARM'] as const).map((k) => (
-                <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? s.segOn : s.segOff} onClick={() => setTab(k)}>
+                <button
+                  key={k}
+                  role="tab"
+                  aria-selected={tab === k}
+                  className={tab === k ? s.segOn : s.segOff}
+                  onClick={() => setTab(k)}
+                >
                   {k === 'AMR' ? `AMR ${amrs.length}` : `로봇팔 ${arms.length}`}
                 </button>
               ))}
             </div>
           </div>
           <ul className={s.targetList}>
-            {list.length === 0 && <li className={s.emptyRow}>{tab === 'AMR' ? 'AMR 정보가 없어요' : '로봇팔 정보가 없어요'}</li>}
+            {list.length === 0 && (
+              <li className={s.emptyRow}>{tab === 'AMR' ? 'AMR 정보가 없어요' : '로봇팔 정보가 없어요'}</li>
+            )}
             {list.map((r) => (
-              <TargetRow key={r.robot_id} r={r} ov={ov} on={r.robot_id === selected} onPick={() => setSelected(r.robot_id)} />
+              <TargetRow
+                key={r.robot_id}
+                r={r}
+                ov={ov}
+                offline={offline}
+                on={r.robot_id === selected}
+                onPick={() => setSelected(r.robot_id)}
+              />
             ))}
           </ul>
           <p className={s.sideFoot}>
@@ -127,10 +155,18 @@ export function Monitoring() {
             <span className={s.muted}>지도</span>
             <b>맵 구성도 · 200×100 cm</b>
             <div role="group" aria-label="보기 방식" className={s.viewSeg}>
-              <button className={view === 'top' ? s.viewOn : s.viewOff} aria-pressed={view === 'top'} onClick={() => setView('top')}>
+              <button
+                className={view === 'top' ? s.viewOn : s.viewOff}
+                aria-pressed={view === 'top'}
+                onClick={() => setView('top')}
+              >
                 탑뷰
               </button>
-              <button className={view === '3d' ? s.viewOn : s.viewOff} aria-pressed={view === '3d'} onClick={() => setView('3d')}>
+              <button
+                className={view === '3d' ? s.viewOn : s.viewOff}
+                aria-pressed={view === '3d'}
+                onClick={() => setView('3d')}
+              >
                 3D
               </button>
             </div>
@@ -169,20 +205,28 @@ export function Monitoring() {
               label="매장 지도: AMR 위치와 남은 경로"
             />
             {bots.length > 0 && (
-            <div className={s.legend}>
-              {bots.map((b) => (
-                <span key={b.id}>
-                  <span className={s.dot} style={{ background: b.color }} /> {robotName(b.id)} {b.sub}
-                </span>
-              ))}
-            </div>
+              <div className={s.legend}>
+                {bots.map((b) => (
+                  <span key={b.id}>
+                    <span className={s.dot} style={{ background: b.color }} /> {robotName(b.id)} {b.sub}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
           <TaskQueue ov={ov} now={now} />
         </main>
 
         <aside aria-label="상세" className={s.detail}>
-          {sel ? isAmr(sel) ? <AmrDetail r={sel} ov={ov} now={now} /> : <ArmDetail a={sel} /> : <p className={s.muted}>{ov.robots.length ? '대상을 골라 주세요' : '표시할 로봇이 없어요'}</p>}
+          {sel ? (
+            isAmr(sel) ? (
+              <AmrDetail r={sel} ov={ov} now={now} offline={offline} />
+            ) : (
+              <ArmDetail a={sel} offline={offline} />
+            )
+          ) : (
+            <p className={s.muted}>{ov.robots.length ? '대상을 골라 주세요' : '표시할 로봇이 없어요'}</p>
+          )}
           <RecentAlarms ov={ov} />
         </aside>
       </div>
@@ -192,13 +236,40 @@ export function Monitoring() {
 
 /* ── 위 요약 줄 ── */
 
-function SummaryBar({ ov, now }: { ov: AdminOverview; now: number }) {
+function SummaryBar({ ov, now, offline }: { ov: AdminOverview; now: number; offline: boolean }) {
   const amrs = ov.robots.filter(isAmr)
   const arms = ov.robots.filter(isArm)
+  if (offline)
+    return (
+      <div className={s.summary}>
+        <div className={s.sumGroup}>
+          <b>AMR {amrs.length}대</b>
+          <span style={{ color: C.muted }}>● 연결 안 됨 {amrs.length}</span>
+        </div>
+        <div className={s.vline} />
+        <div className={s.sumGroup}>
+          <b>로봇팔 {arms.length}대</b>
+          <span style={{ color: C.muted }}>● 연결 안 됨 {arms.length}</span>
+        </div>
+        <div className={s.vline} />
+        <div className={s.sumGroup}>
+          <b>테이블 {ov.tables.length}개</b>
+          <span style={{ color: C.muted }}>상태 확인 안 됨</span>
+        </div>
+      </div>
+    )
   const late = (r: RobotView) => now - Date.parse(r.last_seen_at) > 3000
   const n = (f: (r: AmrView) => boolean) => amrs.filter(f).length
-  const guide = n((r) => ['TO_ENTRANCE', 'GUIDING'].includes(r.state) || (r.state === 'ARRIVED' && taskOf(ov, r.task_id)?.task_type === 'GUIDE'))
-  const serve = n((r) => ['TO_PICKUP', 'QUEUED', 'DOCKED', 'SERVING'].includes(r.state) || (r.state === 'ARRIVED' && taskOf(ov, r.task_id)?.task_type === 'SERVE'))
+  const guide = n(
+    (r) =>
+      ['TO_ENTRANCE', 'GUIDING'].includes(r.state) ||
+      (r.state === 'ARRIVED' && taskOf(ov, r.task_id)?.task_type === 'GUIDE'),
+  )
+  const serve = n(
+    (r) =>
+      ['TO_PICKUP', 'QUEUED', 'DOCKED', 'SERVING'].includes(r.state) ||
+      (r.state === 'ARRIVED' && taskOf(ov, r.task_id)?.task_type === 'SERVE'),
+  )
   const err = n((r) => r.state === 'E_STOP')
   const charging = n((r) => r.state === 'CHARGING')
   const idle = amrs.length - guide - serve - err - charging
@@ -220,7 +291,9 @@ function SummaryBar({ ov, now }: { ov: AdminOverview; now: number }) {
         <b>로봇팔 {arms.length}대</b>
         <span style={{ color: C.green }}>● 조리 {arms.filter((a) => a.cook && a.state !== 'E_STOP').length}</span>
         <span style={{ color: C.muted }}>● 대기 {arms.filter((a) => !a.cook && a.state !== 'E_STOP').length}</span>
-        {arms.some((a) => a.state === 'E_STOP') && <span style={{ color: C.red }}>● 오류 {arms.filter((a) => a.state === 'E_STOP').length}</span>}
+        {arms.some((a) => a.state === 'E_STOP') && (
+          <span style={{ color: C.red }}>● 오류 {arms.filter((a) => a.state === 'E_STOP').length}</span>
+        )}
       </div>
       <div className={s.vline} />
       <div className={s.sumGroup}>
@@ -237,18 +310,39 @@ function SummaryBar({ ov, now }: { ov: AdminOverview; now: number }) {
 
 /* ── 대상 목록 한 줄 ── */
 
-function TargetRow({ r, ov, on, onPick }: { r: RobotView; ov: AdminOverview; on: boolean; onPick: () => void }) {
-  const [chip, tone] = stateChip(r)
+function TargetRow({
+  r,
+  ov,
+  on,
+  onPick,
+  offline,
+}: {
+  r: RobotView
+  ov: AdminOverview
+  on: boolean
+  onPick: () => void
+  offline: boolean
+}) {
+  const [chip, tone] = stateChip(r, offline)
   const task = taskOf(ov, r.task_id)
   const amr = isAmr(r)
   const pct = amr ? r.battery_pct : r.cook ? Math.round((r.cook.step / r.cook.steps) * 100) : 0
-  const bad = r.state === 'E_STOP'
+  const bad = !offline && r.state === 'E_STOP'
   const bar = bad ? C.red : amr && r.battery_pct < 25 ? C.amber : '#5BE3A0'
   return (
     <li>
-      <button className={`${s.target} ${on ? s.targetOn : ''}`} style={on ? { boxShadow: `${bad ? C.red : '#3DD68C'} 3px 0 0 inset` } : undefined} onClick={onPick} aria-current={on || undefined}>
+      <button
+        className={`${s.target} ${on ? s.targetOn : ''}`}
+        style={on ? { boxShadow: `${bad ? C.red : '#3DD68C'} 3px 0 0 inset` } : undefined}
+        onClick={onPick}
+        aria-current={on || undefined}
+      >
         <span className={s.targetTop}>
-          <span className={s.dot} style={{ background: bad ? C.red : '#5BE3A0' }} aria-hidden="true" />
+          <span
+            className={s.dot}
+            style={{ background: offline ? C.muted : bad ? C.red : '#5BE3A0' }}
+            aria-hidden="true"
+          />
           <b>{amr ? robotName(r.robot_id) : `${armTitle(r)} · ${robotName(r.robot_id)}`}</b>
           <span className={s.chip} style={toneStyle(tone)}>
             {chip}
@@ -258,10 +352,18 @@ function TargetRow({ r, ov, on, onPick }: { r: RobotView; ov: AdminOverview; on:
           <span className={s.track}>
             <span style={{ width: `${pct}%`, background: bar }} />
           </span>
-          <span>{amr ? `${pct}%` : r.cook ? `${r.cook.step}/${r.cook.steps}` : '—'}</span>
+          <span>{offline ? '—' : amr ? `${pct}%` : r.cook ? `${r.cook.step}/${r.cook.steps}` : '—'}</span>
         </span>
         <span className={s.targetSub}>
-          {amr ? amrDoing(r, task, ov) : r.cook ? `${r.cook.order_id} ${r.cook.name} ${r.cook.qty} · ${armStateText(r.state)}` : r.state === 'E_STOP' ? '비상 정지 · 복구 대기' : '받은 주문 없음'}
+          {offline
+            ? '서버 연결을 기다리는 중'
+            : amr
+              ? amrDoing(r, task, ov)
+              : r.cook
+                ? `${r.cook.order_id} ${r.cook.name} ${r.cook.qty} · ${armStateText(r.state)}`
+                : r.state === 'E_STOP'
+                  ? '비상 정지 · 복구 대기'
+                  : '받은 주문 없음'}
         </span>
       </button>
     </li>
@@ -318,7 +420,11 @@ function TaskQueue({ ov, now }: { ov: AdminOverview; now: number }) {
                 <tr key={t.task_id}>
                   <td>{taskNo(t.task_id)}</td>
                   <td>{t.task_type === 'GUIDE' ? '안내' : '서빙'}</td>
-                  <td>{t.task_type === 'GUIDE' ? `${t.table_id}번 · ${t.party_size}명` : `${t.table_id}번 · ${o ? `${o.order_id} ${itemsText(o)}` : t.order_id}`}</td>
+                  <td>
+                    {t.task_type === 'GUIDE'
+                      ? `${t.table_id}번 · ${t.party_size}명`
+                      : `${t.table_id}번 · ${o ? `${o.order_id} ${itemsText(o)}` : t.order_id}`}
+                  </td>
                   <td>{t.robot_id ? robotName(t.robot_id) : '—'}</td>
                   <td style={{ color }}>{text}</td>
                   <td>{t.robot_id ? '—' : mmss((now - Date.parse(t.created_at)) / 1000)}</td>
@@ -343,19 +449,22 @@ function queueState(t: AdminTask, ov: AdminOverview): [string, string] {
 
 /* ── 오른쪽 상세 ── */
 
-function AmrDetail({ r, ov, now }: { r: AmrView; ov: AdminOverview; now: number }) {
+function AmrDetail({ r, ov, now, offline }: { r: AmrView; ov: AdminOverview; now: number; offline: boolean }) {
   const { run, busy } = useAdmin()
   const [confirm, setConfirm] = useState(false)
   const task = taskOf(ov, r.task_id)
   const order = ov.orders.find((o) => o.order_id === task?.order_id) ?? null
-  const [chip, tone] = stateChip(r)
+  const [chip, tone] = stateChip(r, offline)
   const n = r.robot_id.replace(/\D/g, '')
   const kind = amrKind(r, task)
   const steps = task ? taskSteps(task, r, order) : []
   const incident = ov.alarms.find((a) => a.source === r.robot_id && a.incident && !a.incident.resolved_at)
   const paused = r.state === 'PAUSED'
-  const req = (kind: 'PAUSE' | 'RESUME' | 'REASSIGN' | 'E_STOP') => ({ kind, target_id: r.robot_id })
-  const deg = Math.round((((r.pose.yaw * 180) / Math.PI) % 360 + 360) % 360)
+  const req = (kind: 'PAUSE' | 'RESUME' | 'REASSIGN' | 'E_STOP') => ({
+    kind,
+    target_id: r.robot_id,
+  })
+  const deg = Math.round(((((r.pose.yaw * 180) / Math.PI) % 360) + 360) % 360)
 
   return (
     <div className={s.detailBody}>
@@ -366,7 +475,9 @@ function AmrDetail({ r, ov, now }: { r: AmrView; ov: AdminOverview; now: number 
         <div>
           <h2 className={s.detailTitle}>{robotName(r.robot_id)}</h2>
           <span className={s.small}>
-            PinkyPro · 수신 {Math.max(0.1, (now - Date.parse(r.last_seen_at)) / 1000).toFixed(1)}초 전
+            {offline
+              ? 'PinkyPro · 아직 수신 없음'
+              : `PinkyPro · 수신 ${Math.max(0.1, (now - Date.parse(r.last_seen_at)) / 1000).toFixed(1)}초 전`}
           </span>
         </div>
         <span className={s.chip} style={{ ...toneStyle(tone), marginLeft: 'auto' }}>
@@ -374,24 +485,41 @@ function AmrDetail({ r, ov, now }: { r: AmrView; ov: AdminOverview; now: number 
         </span>
       </div>
       <div className={s.tiles}>
-        <Tile k="목적지" v={amrTarget(r, task)} />
-        <Tile k="주문" v={task?.task_type === 'SERVE' ? (task.order_id ?? '—') : task ? `${task.party_size}명 안내` : '—'} />
-        <Tile k="위치 x · y · θ" v={`${r.pose.x.toFixed(2)} · ${r.pose.y.toFixed(2)} · ${deg}°`} />
-        <Tile k="속도 · 배터리" v={`${r.speed.toFixed(2)} m/s · ${r.battery_pct}%`} />
+        <Tile k="목적지" v={offline ? '—' : amrTarget(r, task)} />
+        <Tile
+          k="주문"
+          v={task?.task_type === 'SERVE' ? (task.order_id ?? '—') : task ? `${task.party_size}명 안내` : '—'}
+        />
+        <Tile k="위치 x · y · θ" v={offline ? '—' : `${r.pose.x.toFixed(2)} · ${r.pose.y.toFixed(2)} · ${deg}°`} />
+        <Tile k="속도 · 배터리" v={offline ? '—' : `${r.speed.toFixed(2)} m/s · ${r.battery_pct}%`} />
       </div>
       <h3 className={s.h3}>임무 단계{task ? ` · ${taskNo(task.task_id)}` : ''}</h3>
       {steps.length ? (
         <ol className={s.steps}>
           {steps.map((st) => (
-            <li key={st.label} className={st.status === 'todo' ? s.stepTodo : undefined} aria-current={st.status === 'now' ? 'step' : undefined}>
+            <li
+              key={st.label}
+              className={st.status === 'todo' ? s.stepTodo : undefined}
+              aria-current={st.status === 'now' ? 'step' : undefined}
+            >
               <span className={st.status === 'now' ? s.stepDotNow : st.status === 'done' ? s.stepDotDone : s.stepDot} />
               <span className={st.status === 'now' ? s.stepNow : undefined}>{st.label}</span>
-              <span className={s.stepAt}>{st.status === 'now' ? (r.state === 'E_STOP' ? '정지' : paused ? '중단' : '진행 중') : st.at ? hhmm(st.at) : ''}</span>
+              <span className={s.stepAt}>
+                {st.status === 'now'
+                  ? r.state === 'E_STOP'
+                    ? '정지'
+                    : paused
+                      ? '중단'
+                      : '진행 중'
+                  : st.at
+                    ? hhmm(st.at)
+                    : ''}
+              </span>
             </li>
           ))}
         </ol>
       ) : (
-        <p className={s.muted}>맡은 임무가 없어요</p>
+        <p className={s.muted}>{offline ? '서버에 연결되면 보여요' : '맡은 임무가 없어요'}</p>
       )}
 
       {r.state === 'E_STOP' ? (
@@ -407,20 +535,25 @@ function AmrDetail({ r, ov, now }: { r: AmrView; ov: AdminOverview; now: number 
           <div className={s.btnRow}>
             <button
               className={s.outBtn}
-              disabled={busy(req(paused ? 'RESUME' : 'PAUSE'))}
-              onClick={() => void run(req(paused ? 'RESUME' : 'PAUSE'), paused ? `${robotName(r.robot_id)} 다시 진행해요` : `${robotName(r.robot_id)} 일시 중단했어요`)}
+              disabled={offline || busy(req(paused ? 'RESUME' : 'PAUSE'))}
+              onClick={() =>
+                void run(
+                  req(paused ? 'RESUME' : 'PAUSE'),
+                  paused ? `${robotName(r.robot_id)} 다시 진행해요` : `${robotName(r.robot_id)} 일시 중단했어요`,
+                )
+              }
             >
               {paused ? '다시 진행' : '일시 중단'}
             </button>
             <button
               className={s.outBtn}
-              disabled={!task || r.state === 'ARRIVED' || busy(req('REASSIGN'))}
+              disabled={offline || !task || r.state === 'ARRIVED' || busy(req('REASSIGN'))}
               onClick={() => void run(req('REASSIGN'), `${task ? taskNo(task.task_id) : ''} 다른 AMR에 다시 맡겼어요`)}
             >
               재할당
             </button>
           </div>
-          <button className={s.dangerBtn} onClick={() => setConfirm(true)} disabled={busy(req('E_STOP'))}>
+          <button className={s.dangerBtn} onClick={() => setConfirm(true)} disabled={offline || busy(req('E_STOP'))}>
             비상 정지
           </button>
         </>
@@ -439,10 +572,10 @@ function AmrDetail({ r, ov, now }: { r: AmrView; ov: AdminOverview; now: number 
   )
 }
 
-function ArmDetail({ a }: { a: ArmView }) {
+function ArmDetail({ a, offline }: { a: ArmView; offline: boolean }) {
   const { run, busy } = useAdmin()
   const [confirm, setConfirm] = useState(false)
-  const [chip, tone] = stateChip(a)
+  const [chip, tone] = stateChip(a, offline)
   const c = a.cook
   const steps = ARM_STEPS[a.cook_type]
   const cur = steps.indexOf(a.state === 'E_STOP' ? ((a.hold_state as ArmView['state']) ?? 'IDLE') : a.state)
@@ -455,7 +588,9 @@ function ArmDetail({ a }: { a: ArmView }) {
         </span>
         <div>
           <h2 className={s.detailTitle}>{armTitle(a)}</h2>
-          <span className={s.small}>{robotName(a.robot_id)} · {a.robot_id}</span>
+          <span className={s.small}>
+            {robotName(a.robot_id)} · {a.robot_id}
+          </span>
         </div>
         <span className={s.chip} style={{ ...toneStyle(tone), marginLeft: 'auto' }}>
           {chip}
@@ -472,7 +607,11 @@ function ArmDetail({ a }: { a: ArmView }) {
         {steps.map((st, i) => {
           const status = !c || cur < 0 ? 'todo' : i < cur ? 'done' : i === cur ? 'now' : 'todo'
           return (
-            <li key={st} className={status === 'todo' ? s.stepTodo : undefined} aria-current={status === 'now' ? 'step' : undefined}>
+            <li
+              key={st}
+              className={status === 'todo' ? s.stepTodo : undefined}
+              aria-current={status === 'now' ? 'step' : undefined}
+            >
               <span className={status === 'now' ? s.stepDotNow : status === 'done' ? s.stepDotDone : s.stepDot} />
               <span className={status === 'now' ? s.stepNow : undefined}>{armStateText(st)}</span>
               <span className={s.stepAt}>{status === 'now' ? (a.state === 'E_STOP' ? '정지' : '진행 중') : ''}</span>
@@ -488,7 +627,7 @@ function ArmDetail({ a }: { a: ArmView }) {
           </Link>
         </div>
       ) : (
-        <button className={s.dangerBtn} onClick={() => setConfirm(true)} disabled={busy(req)}>
+        <button className={s.dangerBtn} onClick={() => setConfirm(true)} disabled={offline || busy(req)}>
           비상 정지
         </button>
       )}
@@ -518,7 +657,13 @@ function Tile({ k, v }: { k: string; v: string }) {
 function ConfirmEStop({ name, onYes, onClose }: { name: string; onYes: () => void; onClose: () => void }) {
   return (
     <div className={s.dim} onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={`${name} 비상 정지`} className={s.dialog} onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${name} 비상 정지`}
+        className={s.dialog}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2>{name}을(를) 비상 정지할까요?</h2>
         <p>지금 하던 일을 멈추고, 알람·이력 화면에서 재시도하거나 작업을 취소할 때까지 움직이지 않아요.</p>
         <div className={s.btnRow}>
@@ -548,7 +693,12 @@ function RecentAlarms({ ov }: { ov: AdminOverview }) {
       </div>
       {list.length === 0 && <p className={s.muted}>알람이 없어요</p>}
       {list.map((a) => (
-        <Link key={a.alarm_id} to={`/admin/alarms?alarm=${a.alarm_id}`} className={s.recentItem} style={a.level === 'ERROR' ? { background: '#3B1512' } : undefined}>
+        <Link
+          key={a.alarm_id}
+          to={`/admin/alarms?alarm=${a.alarm_id}`}
+          className={s.recentItem}
+          style={a.level === 'ERROR' ? { background: '#3B1512' } : undefined}
+        >
           <b style={{ color: toneStyle(LEVEL[a.level][1]).color }}>
             {LEVEL[a.level][0]} · {robotName(a.source)}
           </b>{' '}

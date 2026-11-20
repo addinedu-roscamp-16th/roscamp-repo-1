@@ -112,7 +112,11 @@ export const ARM_STEPS: Record<CookType, ArmView['state'][]> = {
   WOK: ['PICK_INGREDIENTS', 'STIR_FRYING', 'PLATING', 'ON_HANDOFF'],
 }
 
-export function stateChip(r: RobotView): [string, Tone] {
+export const OFFLINE: [string, Tone] = ['연결 안 됨', 'gray']
+
+/** offline: 서버에서 상태를 아직 못 받음 */
+export function stateChip(r: RobotView, offline = false): [string, Tone] {
+  if (offline) return OFFLINE
   if (r.type === 'AMR') {
     const [label, tone] = AMR_STATE[r.state]
     if (r.state === 'ARRIVED') return [label, 'green']

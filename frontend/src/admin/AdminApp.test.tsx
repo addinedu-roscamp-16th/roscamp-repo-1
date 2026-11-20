@@ -149,29 +149,44 @@ describe('A3 알람 · 이력', () => {
   })
 })
 
+function renderOffline(path: string) {
+  const api: AdminApi = {
+    getOverview: () => Promise.reject(new Error('down')),
+    requestOperation: vi.fn(),
+    getOperation: vi.fn(),
+    subscribeOverview: (_cb, onConnection) => {
+      onConnection?.(false)
+      return () => {}
+    },
+    getEvents: () => Promise.reject(new Error('down')),
+    getReplay: () => Promise.reject(new Error('down')),
+  }
+  render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/admin/*" element={<AdminApp api={api} pollMs={0} />} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
 describe('서버에 연결되지 않을 때', () => {
-  it('화면 틀은 그대로 보이고, 무엇을 확인할지 알려 준다', async () => {
-    const api: AdminApi = {
-      getOverview: () => Promise.reject(new Error('down')),
-      requestOperation: vi.fn(),
-      getOperation: vi.fn(),
-      subscribeOverview: (_cb, onConnection) => {
-        onConnection?.(false)
-        return () => {}
-      },
-      getEvents: () => Promise.reject(new Error('down')),
-      getReplay: () => Promise.reject(new Error('down')),
-    }
-    render(
-      <MemoryRouter initialEntries={['/admin']}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminApp api={api} pollMs={0} />} />
-        </Routes>
-      </MemoryRouter>,
-    )
+  it('A1: 매장 구성은 보이고 상태는 연결 안 됨, 무엇을 확인할지 알려 준다', () => {
+    renderOffline('/admin')
     expect(screen.getByRole('alert')).toHaveTextContent('백엔드 서버에 연결되지 않았어요')
-    expect(screen.getByText('AMR 0대')).toBeInTheDocument()
-    expect(screen.getByText('표시할 로봇이 없어요')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '첫 화면에서 가짜 데이터로 바꾸기' })).toBeInTheDocument()
+    expect(screen.getByText('AMR 3대')).toBeInTheDocument()
+    const list = screen.getByRole('complementary', { name: '대상 목록' })
+    expect(within(list).getAllByText('연결 안 됨')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: '비상 정지' })).toBeDisabled()
+  })
+
+  it('A2: 테이블 1~6번이 확인 안 됨으로 보이고 상태 변경은 꺼져 있다', () => {
+    renderOffline('/admin/tables')
+    for (let id = 1; id <= 6; id++) {
+      const card = screen.getByLabelText(`${id}번 테이블`)
+      expect(within(card).getByText('확인 안 됨')).toBeInTheDocument()
+      expect(within(card).getByRole('button', { name: '상태 변경' })).toBeDisabled()
+    }
   })
 })

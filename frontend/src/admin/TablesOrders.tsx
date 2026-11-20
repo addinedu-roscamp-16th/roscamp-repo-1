@@ -24,7 +24,8 @@ const MENU_COOK: Record<number, CookType> = { 1: 'FRY', 2: 'WOK' }
 
 /** A2 테이블 · 주문 · 조리 */
 export function TablesOrders() {
-  const { ov } = useAdmin()
+  const { ov, hasData } = useAdmin()
+  const offline = !hasData
   const count = (st: TableStatus) => ov.tables.filter((t) => t.status === st).length
   const seats = ov.tables.reduce((n, t) => n + t.seats, 0)
   return (
@@ -32,23 +33,31 @@ export function TablesOrders() {
       <main className={s.a2Main}>
         <div className={s.a2Head}>
           <h1 className={s.h1}>테이블 현황</h1>
-          <div className={s.counts}>
-            <span>
-              <b>이용 가능</b> {count('AVAILABLE')}
-            </span>
-            <span>
-              <b style={{ color: C.blue }}>안내 중</b> {count('ASSIGNED')}
-            </span>
-            <span>
-              <b style={{ color: C.green }}>이용 중</b> {count('IN_USE')}
-            </span>
-            <span>
-              <b>정리 대기</b> {count('CLEANING')}
-            </span>
-            <span>
-              · {ov.tables.length}개 테이블 {seats}석
-            </span>
-          </div>
+          {offline ? (
+            <div className={s.counts}>
+              <span>
+                · {ov.tables.length}개 테이블 {seats}석 · 상태 확인 안 됨
+              </span>
+            </div>
+          ) : (
+            <div className={s.counts}>
+              <span>
+                <b>이용 가능</b> {count('AVAILABLE')}
+              </span>
+              <span>
+                <b style={{ color: C.blue }}>안내 중</b> {count('ASSIGNED')}
+              </span>
+              <span>
+                <b style={{ color: C.green }}>이용 중</b> {count('IN_USE')}
+              </span>
+              <span>
+                <b>정리 대기</b> {count('CLEANING')}
+              </span>
+              <span>
+                · {ov.tables.length}개 테이블 {seats}석
+              </span>
+            </div>
+          )}
           <div style={{ flexGrow: 1 }} />
           <span className={s.small}>상태 변경 시 중복 배정 여부를 먼저 검사합니다</span>
         </div>
@@ -57,7 +66,7 @@ export function TablesOrders() {
           {[...ov.tables]
             .sort((a, b) => a.table_id - b.table_id)
             .map((t) => (
-              <TableCard key={t.table_id} t={t} ov={ov} />
+              <TableCard key={t.table_id} t={t} ov={ov} offline={offline} />
             ))}
         </div>
         <h2 className={s.h1} style={{ fontSize: 17 }}>
@@ -67,9 +76,9 @@ export function TablesOrders() {
           {ov.robots
             .filter((r): r is ArmView => r.type === 'ARM')
             .map((a) => (
-              <ArmCard key={a.robot_id} a={a} />
+              <ArmCard key={a.robot_id} a={a} offline={offline} />
             ))}
-          <PickupCard ov={ov} />
+          <PickupCard ov={ov} offline={offline} />
         </div>
       </main>
       <OrdersPanel ov={ov} />
@@ -77,21 +86,25 @@ export function TablesOrders() {
   )
 }
 
-function TableCard({ t, ov }: { t: AdminTable; ov: AdminOverview }) {
+function TableCard({ t, ov, offline }: { t: AdminTable; ov: AdminOverview; offline: boolean }) {
   const { run, busy, now } = useAdmin()
   const [menu, setMenu] = useState(false)
   const spec = TABLES.find((x) => x.id === t.table_id)
   const where = spec && spec.seats === 4 ? '가운데' : '벽쪽'
-  const [chip, tone] = TABLE_STATUS[t.status]
+  const [chip, tone] = offline ? (['확인 안 됨', 'gray'] as const) : TABLE_STATUS[t.status]
   const v = t.visit
   const guide = ov.tasks.find((x) => x.task_type === 'GUIDE' && x.visit_id === v?.visit_id && !x.finished_at)
   const orders = ov.orders.filter((o) => o.visit_id === v?.visit_id)
   const latest = orders[orders.length - 1]
-  const serveTask = latest && ov.tasks.find((x) => x.task_type === 'SERVE' && x.order_id === latest.order_id && !x.finished_at)
+  const serveTask =
+    latest && ov.tasks.find((x) => x.task_type === 'SERVE' && x.order_id === latest.order_id && !x.finished_at)
 
   let line1 = ''
   let line2 = ''
-  if (t.status === 'AVAILABLE') {
+  if (offline) {
+    line1 = '상태를 아직 몰라요'
+    line2 = '서버에 연결되면 보여요'
+  } else if (t.status === 'AVAILABLE') {
     line1 = '빈 자리'
     line2 = '다음 손님 배정 가능'
   } else if (t.status === 'ASSIGNED' && v) {
@@ -107,11 +120,19 @@ function TableCard({ t, ov }: { t: AdminTable; ov: AdminOverview }) {
     line2 = '신규 배정 대상에서 제외됨'
   }
 
-  const set = (status: TableStatus) => ({ kind: 'SET_TABLE_STATUS' as const, target_id: String(t.table_id), params: { status } })
-  const cleaning = t.status === 'CLEANING'
+  const set = (status: TableStatus) => ({
+    kind: 'SET_TABLE_STATUS' as const,
+    target_id: String(t.table_id),
+    params: { status },
+  })
+  const cleaning = !offline && t.status === 'CLEANING'
 
   return (
-    <div className={s.card} style={cleaning ? { border: `1px dashed ${C.muted}` } : undefined} aria-label={`${t.table_id}번 테이블`}>
+    <div
+      className={s.card}
+      style={cleaning ? { border: `1px dashed ${C.muted}` } : undefined}
+      aria-label={`${t.table_id}번 테이블`}
+    >
       <div className={s.cardHead}>
         <b className={s.cardNo}>{t.table_id}번</b>
         <span className={s.small} style={{ fontSize: 13 }}>
@@ -126,12 +147,22 @@ function TableCard({ t, ov }: { t: AdminTable; ov: AdminOverview }) {
         <span className={s.muted}>{line2}</span>
       </div>
       {cleaning ? (
-        <button className={s.primaryBtn} disabled={busy(set('AVAILABLE'))} onClick={() => void run(set('AVAILABLE'), `${t.table_id}번 이용 가능으로 바꿨어요`)}>
+        <button
+          className={s.primaryBtn}
+          disabled={busy(set('AVAILABLE'))}
+          onClick={() => void run(set('AVAILABLE'), `${t.table_id}번 이용 가능으로 바꿨어요`)}
+        >
           정리 완료 → 이용 가능
         </button>
       ) : (
         <div style={{ position: 'relative' }}>
-          <button className={s.outBtn} style={{ width: '100%' }} aria-expanded={menu} onClick={() => setMenu(!menu)}>
+          <button
+            className={s.outBtn}
+            style={{ width: '100%' }}
+            aria-expanded={menu}
+            disabled={offline}
+            onClick={() => setMenu(!menu)}
+          >
             상태 변경
           </button>
           {menu && (
@@ -157,8 +188,8 @@ function TableCard({ t, ov }: { t: AdminTable; ov: AdminOverview }) {
   )
 }
 
-function ArmCard({ a }: { a: ArmView }) {
-  const [chip, tone] = stateChip(a)
+function ArmCard({ a, offline }: { a: ArmView; offline: boolean }) {
+  const [chip, tone] = stateChip(a, offline)
   const c = a.cook
   const pct = c ? Math.round(((c.step - 1) / c.steps) * 100 + 100 / c.steps / 2) : 0
   return (
@@ -170,34 +201,58 @@ function ArmCard({ a }: { a: ArmView }) {
           {chip}
         </span>
       </div>
-      <span className={s.cardText}>{c ? `${c.order_id} ${c.name} ${c.qty}` : a.state === 'E_STOP' ? '비상 정지 · 복구 대기' : '받은 주문 없음'}</span>
+      <span className={s.cardText}>
+        {c
+          ? `${c.order_id} ${c.name} ${c.qty}`
+          : offline
+            ? '서버 연결을 기다리는 중'
+            : a.state === 'E_STOP'
+              ? '비상 정지 · 복구 대기'
+              : '받은 주문 없음'}
+      </span>
       <div className={s.track} style={{ height: 6 }}>
-        <span style={{ width: `${pct}%`, background: a.state === 'E_STOP' ? C.red : '#3DD68C' }} />
+        <span
+          style={{
+            width: `${pct}%`,
+            background: a.state === 'E_STOP' ? C.red : '#3DD68C',
+          }}
+        />
       </div>
-      <span className={s.small}>{c ? `${c.step}/${c.steps} ${armStateText(a.state)} (남은 ${mmss(c.remaining_sec)})` : '—'}</span>
+      <span className={s.small}>
+        {c ? `${c.step}/${c.steps} ${armStateText(a.state)} (남은 ${mmss(c.remaining_sec)})` : '—'}
+      </span>
     </div>
   )
 }
 
 /** 받는 곳: 조리가 끝나 AMR이 가져가기를 기다리는 음식 */
-function PickupCard({ ov }: { ov: AdminOverview }) {
+function PickupCard({ ov, offline }: { ov: AdminOverview; offline: boolean }) {
   const { now } = useAdmin()
   const waiting = ov.orders
     .filter((o) => o.status === 'READY' || o.status === 'ON_HOLD' || o.status === 'COOKING')
     .flatMap((o) => o.items.filter((i) => i.ready_at).map((i) => ({ o, i })))
   const first = waiting[0]
-  const task = first && ov.tasks.find((t) => t.task_type === 'SERVE' && t.order_id === first.o.order_id && !t.finished_at)
+  const task =
+    first && ov.tasks.find((t) => t.task_type === 'SERVE' && t.order_id === first.o.order_id && !t.finished_at)
   return (
     <div className={s.card} aria-label="받는 곳">
       <div className={s.cardHead}>
         <b style={{ fontSize: 16 }}>받는 곳</b>
         <span className={s.small}>튀김 · 볶음밥</span>
-        <span className={s.chip} style={{ ...toneStyle(waiting.length ? 'amber' : 'gray'), marginLeft: 'auto' }}>
-          {waiting.length ? `음식 대기 ${waiting.length}` : '비어 있음'}
+        <span
+          className={s.chip}
+          style={{
+            ...toneStyle(waiting.length ? 'amber' : 'gray'),
+            marginLeft: 'auto',
+          }}
+        >
+          {offline ? '확인 안 됨' : waiting.length ? `음식 대기 ${waiting.length}` : '비어 있음'}
         </span>
       </div>
       <span className={s.cardText}>
-        {first ? `${PICKUP_NAME[MENU_COOK[first.i.menu_id] ?? 'WOK']} · ${first.o.order_id} ${first.i.name} ${first.i.qty}` : '가져갈 음식 없음'}
+        {first
+          ? `${PICKUP_NAME[MENU_COOK[first.i.menu_id] ?? 'WOK']} · ${first.o.order_id} ${first.i.name} ${first.i.qty}`
+          : offline ? '서버 연결을 기다리는 중' : '가져갈 음식 없음'}
       </span>
       <div className={s.track} style={{ height: 6 }}>
         <span style={{ width: first ? '100%' : '0%', background: '#F5B942' }} />
@@ -214,7 +269,9 @@ function PickupCard({ ov }: { ov: AdminOverview }) {
 function OrdersPanel({ ov }: { ov: AdminOverview }) {
   const [done, setDone] = useState(false)
   const list = ov.orders
-    .filter((o) => (done ? o.status === 'COMPLETED' || o.status === 'CANCELED' : o.status !== 'COMPLETED' && o.status !== 'CANCELED'))
+    .filter((o) =>
+      done ? o.status === 'COMPLETED' || o.status === 'CANCELED' : o.status !== 'COMPLETED' && o.status !== 'CANCELED',
+    )
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
   return (
     <aside aria-label="주문 · 조리 현황" className={s.orders}>
@@ -238,7 +295,9 @@ function OrdersPanel({ ov }: { ov: AdminOverview }) {
         ))}
       </div>
       <ul className={s.orderList}>
-        {list.length === 0 && <li className={s.muted}>{done ? '최근 30분 동안 끝난 주문이 없어요' : '진행 중인 주문이 없어요'}</li>}
+        {list.length === 0 && (
+          <li className={s.muted}>{done ? '최근 30분 동안 끝난 주문이 없어요' : '진행 중인 주문이 없어요'}</li>
+        )}
         {list.map((o) => (
           <li key={o.order_id} className={s.orderCard}>
             <div className={s.cardHead}>

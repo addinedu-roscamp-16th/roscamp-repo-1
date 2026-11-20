@@ -3,9 +3,10 @@ import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { getAdminApi, newRequestKey, type AdminApi, type AdminOverview } from '../api'
 import { Stage } from '../components/Stage'
 import { AlarmsReplay } from './AlarmsReplay'
-import { Ctx, EMPTY_OVERVIEW, opKey, useAdmin, type AdminCtx, type RunOp } from './context'
+import { Ctx, opKey, useAdmin, type AdminCtx, type RunOp } from './context'
 import { C, hhmmss } from './labels'
 import { Monitoring } from './Monitoring'
+import { SKELETON_OVERVIEW } from './skeleton'
 import s from './admin.module.css'
 import { TablesOrders } from './TablesOrders'
 
@@ -79,7 +80,7 @@ export function AdminApp({ api: injected, pollMs = 300 }: { api?: AdminApi; poll
   )
 
   const ctx = useMemo<AdminCtx>(
-    () => ({ api, ov: ov ?? EMPTY_OVERVIEW, hasData: ov != null, connected, now, run, notify, busy: (r) => busyKeys.has(opKey(r)) }),
+    () => ({ api, ov: ov ?? SKELETON_OVERVIEW, hasData: ov != null, connected, now, run, notify, busy: (r) => busyKeys.has(opKey(r)) }),
     [api, ov, connected, now, run, notify, busyKeys],
   )
 

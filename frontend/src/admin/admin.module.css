@@ -243,7 +243,7 @@
 .notice {
   position: absolute;
   left: 50%;
-  top: 72px;
+  bottom: 24px;
   transform: translateX(-50%);
   width: 720px;
   padding: 14px 18px;
@@ -280,7 +280,7 @@
 .toast {
   position: absolute;
   left: 50%;
-  bottom: 28px;
+  top: 68px;
   transform: translateX(-50%);
   padding: 12px 20px;
   border-radius: 10px;
