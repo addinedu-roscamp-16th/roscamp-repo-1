@@ -2,6 +2,7 @@ import { BrowserRouter, Link, Route, Routes, useParams } from 'react-router-dom'
 import { AdminApp } from './admin/AdminApp'
 import { KioskApp } from './kiosk/KioskApp'
 import { tableSpec } from './api/storeLayout'
+import { Home } from './Home'
 import { TableApp } from './table/TableApp'
 
 /**
@@ -21,44 +22,6 @@ export default function App() {
         <Route path="*" element={<Placeholder title="없는 주소예요" />} />
       </Routes>
     </BrowserRouter>
-  )
-}
-
-function Home() {
-  const links = [
-    { to: '/kiosk', label: '입구 키오스크', note: 'K1~K4' },
-    { to: '/kiosk?robot=busy', label: '입구 키오스크 · 로봇 대기 흐름', note: 'K1→K2→K3→K4' },
-    { to: '/table/3', label: '테이블 태블릿 (3번 테이블)', note: 'T1~T5' },
-    { to: '/admin', label: '관리자 PC · 통합 관제', note: 'A1' },
-    { to: '/admin/tables', label: '관리자 PC · 테이블·주문', note: 'A2' },
-    { to: '/admin/alarms', label: '관리자 PC · 알람·이력', note: 'A3' },
-  ]
-  return (
-    <main style={{ maxWidth: 560, margin: '0 auto', padding: '48px 16px' }}>
-      <h1 style={{ fontSize: 28, fontWeight: 800, margin: '0 0 24px' }}>OneTeam 레스토랑 화면</h1>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 12 }}>
-        {links.map((l) => (
-          <li key={l.to}>
-            <Link
-              to={l.to}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '18px 20px',
-                borderRadius: 16,
-                background: '#fff',
-                color: 'var(--c-text)',
-                textDecoration: 'none',
-                fontWeight: 700,
-              }}
-            >
-              <span>{l.label}</span>
-              <span style={{ color: 'var(--c-text-sub)', fontWeight: 500 }}>{l.note}</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </main>
   )
 }
 

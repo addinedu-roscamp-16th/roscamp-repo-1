@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // npm run dev:server 이면 .env.server 를 읽음. BACKEND_URL 로 백엔드 주소를 바꿀 수 있음
+  // frontend/.env 의 BACKEND_URL = 백엔드 주소 (첫 화면 스위치가 "진짜 서버"일 때 씀)
   const env = loadEnv(mode, '.', '')
   return {
     plugins: [react()],

@@ -15,13 +15,12 @@
 ```bash
 cd frontend
 npm install
-npm run dev          # 가짜 데이터로 보기 — http://localhost:5173 (같은 와이파이의 태블릿에서도 접속 가능)
-npm run dev:server   # 진짜 백엔드 서버에 붙여 보기 (주소는 .env.server 의 BACKEND_URL)
+npm run dev        # http://localhost:5173 (같은 와이파이의 태블릿에서도 접속 가능)
 npm test           # 흐름 테스트
 npm run build      # dist/ 에 배포용 파일
 ```
 
-지금은 백엔드 없이 **가짜 API(mock)** 로 동작합니다.
+첫 화면 스위치가 **가짜 데이터**일 때(기본값)는 백엔드 없이 **가짜 API(mock)** 로 동작합니다.
 
 - `/kiosk`: 로봇이 바로 오는 흐름 K1 → K2 → K4
 - `/kiosk?robot=busy`: 로봇이 모두 안내 중인 흐름 K1 → K2 → K3 → K4
@@ -57,9 +56,14 @@ src/
 ## 백엔드 연결 (FastAPI + rclpy)
 
 Confluence **1) FryBot I/F 목록**(2026-11-20 설계 검토안)을 따릅니다.
-`npm run dev:server` 로 실행하면 가짜 데이터 대신 `/api/*` 요청이 백엔드로 넘어갑니다(WebSocket `/api/ws` 포함).
-백엔드 주소는 `frontend/.env.server` 의 `BACKEND_URL` 한 줄만 고치면 됩니다 (기본 `http://localhost:8000`).
-배포용 파일은 `npm run build:server`.
+**첫 화면(`/`)의 스위치**로 바꿉니다.
+
+- **가짜 데이터**: 서버 없이 화면만 움직여 봄 (기본값)
+- **진짜 서버**: `/api/*` 요청과 WebSocket(`/api/ws`)을 백엔드로 넘김
+
+고른 값은 그 기기(브라우저)에 저장됩니다. 태블릿마다 한 번씩 고르면 됩니다.
+백엔드 주소는 `frontend/.env` 의 `BACKEND_URL` 한 줄 (`.env.example` 을 복사해서 만들기, 없으면 `http://localhost:8000`).
+주소를 바꾼 뒤에는 `npm run dev` 를 껐다 켜야 합니다.
 JSON 필드는 `src/api/contract.ts`에 있습니다. 문서가 "확인 필요"로 남긴 형식은 `[제안]`으로 표시했습니다.
 
 | I/F | 경로 | 화면 |
