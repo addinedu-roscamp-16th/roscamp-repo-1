@@ -1,0 +1,9 @@
+# Operator command to the Central Control. Fleet commands (see FleetCommand.srv) are passed on to the Task Manager;
+# SET_TABLE (target = table id, arg = AVAILABLE | CLOSED) and END_USE (target = table id) are handled here.
+# Failure: ok = false and message says why (unknown command / target, or not allowed in the current state).
+string command
+string target
+string arg
+---
+bool ok
+string message

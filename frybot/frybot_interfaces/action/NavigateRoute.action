@@ -1,0 +1,19 @@
+# Route execution on an AMR. mode=GUIDE is the "GuideGuest" behaviour (reverse driving + guest follow check).
+string task_id         # for logs and status only
+string robot_id
+int32 plan_version
+string mode            # NORMAL | GUIDE | YIELD (step aside for another robot: backs out when the spot is behind)
+int64 visit_id         # guest group to keep in sight (GUIDE)
+frybot_interfaces/Waypoint[] route
+---
+bool success
+int32 plan_version
+int32 reached_index
+# reason: OK | PREEMPTED (newer route) | CANCELED | GUEST_LOST | NAV2_FAILED (segment could not be driven)
+#         | E_STOP (emergency-stop channel) | FMS_RESTART (Task Manager restarted)
+#         REJECTED is not sent by the robot: the Task Manager uses it when the robot refuses the goal.
+string reason
+---
+int32 plan_version
+int32 reached_index
+string state           # ACCEPTED MOVING PAUSED_GUEST
