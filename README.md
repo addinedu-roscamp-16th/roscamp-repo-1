@@ -14,3 +14,5 @@ ROS2와 AI를 활용한 자율주행 로봇개발자 부트캠프 1팀 저장소
 | `design/` | UI 및 프로젝트 설계 자료 |
 
 [하드웨어·소프트웨어 아키텍처](docs/ARCHITECTURE.md) · [ROS 실행 명령](FRYBOT_COMMANDS.md) · [개발표준](docs/SOURCE_GUIDE.md) · [배포 가이드](docs/DEPLOYMENT_GUIDE.md)
+
+[저장소 구조 및 통합 검증 검토](docs/REPOSITORY_REVIEW.md)
