@@ -25,9 +25,18 @@ FryBot은 단일 저장소에서 `frontend/`, `api/`, `backend/`, `frybot/`의 �
 | 관제 → AMR · `NavigateRoute.action` | Goal에 `task_id`, `robot_id`, `mode` 문자열, `plan_version`(`int32`), `visit_id`(`int64`), `route`(`Waypoint[]`). | Result에 `success`, `plan_version`, `reached_index`, `reason`. Feedback에 `plan_version`, `reached_index`, `state`. |
 | 관제 → 조리 팔 · `ArmJob.action` | Goal에 `task_id`, `arm_id`, `job` 문자열, `duration`(`float32`), `params_json` 문자열. 작업별 JSON 키는 액션 정의 참조. | Result에 `success` 불리언, `reason` 문자열. Feedback에 `phase` 문자열, `progress`(`float32`). |
 
-- **ID 매핑.** HTTP의 `visit_id`와 `order_id`는 문자열이고 ROS `SubmitTask`에서는 `int64`다. API–ROS 연동 시 변환 책임과 매핑 저장 위치를 정하고, HTTP `order_id`에서 ROS `task_id` 및 최종 결과까지 추적할 수 있게 검증한다.
-- **재요청.** 같은 접수·주문 요청의 응답을 받지 못해 다시 보낼 때 기존 `request_key`를 사용한다. 중복 방문 또는 주문이 생성되지 않는지 확인한다.
-- **완료 판단.** 주문 생성 응답의 `ORDERED`와 ROS의 `accepted`는 각각 주문 등록과 임무 접수 상태다. 통합 테스트는 ROS 결과 이후 같은 주문이 화면에서 서빙 완료로 표시되는지 확인한다.
+### 시스템 간 계약과 검증 조건
+
+아래 항목은 통합 구현 전에 합의할 계약이다. 위 표의 필드와 응답 코드는 현재 OpenAPI 및 ROS 2 정의를 따른다.
+
+| 계약 항목 | 정의할 내용과 검증 조건 |
+| --- | --- |
+| 참여자와 책임 | HTTP 호출자는 키오스크·테이블 화면이고 처리자는 FastAPI다. ROS 연동부는 HTTP 방문·주문 문자열 ID를 `SubmitTask`의 `int64` ID와 연결한다. 매핑을 저장하는 모듈과 임무 최종 상태를 갱신하는 모듈을 명시하고, 주문 ID 하나로 ROS `task_id`와 최종 결과를 조회할 수 있는지 검증한다. |
+| 수락·진행·완료 | HTTP `ORDERED`는 주문 등록, `SubmitTask.accepted`는 ROS 임무 접수다. AMR·조리 팔 액션의 Feedback은 진행 정보다. 로봇 액션 Result와 서비스의 주문 상태를 어떻게 연결할지 정의하고, 실패·취소가 주문 완료로 전이되지 않는지 확인한다. |
+| 시간 초과와 재시도 | 호출별 응답 제한 시간과 작업 완료 기한을 정의한다. 응답을 받지 못하면 기존 처리 상태를 조회하거나 같은 `request_key`로 재요청한다. 키의 적용 범위·보존 기간, 동일 키에 다른 입력이 들어왔을 때의 오류, 재기동 후에도 주문 및 물리 작업이 중복 실행되지 않는 조건을 검증한다. |
+| 오류와 권한 | 입력 오류, 대상 없음, 잘못된 상태 전이, 일시 장애, ROS 목표 거절·취소를 구별한다. 오류별 재시도 가능 여부와 응답 형식, 방문·주문 조회 또는 로봇 명령을 허용할 호출자를 정의한다. |
+| ROS 데이터와 전달 정책 | 필드별 단위·범위·좌표계와 취소 조건을 인터페이스에 명시한다. 상태를 토픽으로 전달하는 경우 발행자·구독자의 QoS, 갱신 주기, 오래된 상태의 처리 기준을 정한다. |
+| 호환성과 추적 | OpenAPI와 ROS 인터페이스를 변경할 때 소비자와 제공자의 배포 순서, 이전 버전 허용 범위, 제거 기준을 정한다. 로그에서 요청 ID, 주문 ID, 임무 ID와 최종 결과를 연계해 응답 유실 및 실행 실패를 재현할 수 있는지 확인한다. |
 
 [HTTP 계약](../api/openapi.yaml) · [SubmitTask](../frybot/frybot_interfaces/srv/SubmitTask.srv) · [NavigateRoute](../frybot/frybot_interfaces/action/NavigateRoute.action) · [ArmJob](../frybot/frybot_interfaces/action/ArmJob.action)
 
