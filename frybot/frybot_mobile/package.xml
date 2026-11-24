@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>frybot_mobile</name>
+  <version>0.1.0</version>
+  <description>FrybotMobile (one AMR with its serving arm): FrybotMobile Controller (route execution, status),
+    FrybotNavigator (Nav2 parameters, behaviour tree and launch), serving-arm job server. The same package runs in
+    the simulation and on the real Pinky Pro.</description>
+  <maintainer email="oneteam@example.com">OneTeam</maintainer>
+  <license>Apache-2.0</license>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>frybot_interfaces</exec_depend>
+  <exec_depend>frybot_control</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_bt_navigator</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
+  <exec_depend>nav2_navfn_planner</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>opennav_docking</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <!-- [수정 2026-11-17] pinky_bringup 대신 내장한 Pinky 드라이버와 로봇 모델.
+       로봇에만 필요한 것(이 파일에 적지 않음, 로봇에 이미 설치됨):
+       sllidar_ros2, tf_transformations, dynamixel_sdk, pinkylib -->
+  <exec_depend>frybot_description</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

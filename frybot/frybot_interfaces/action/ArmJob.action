@@ -1,0 +1,15 @@
+string task_id
+string arm_id
+string job             # LOAD UNLOAD COLLECT_DISHES RETURN_DISHES LOAD_BASKET DROP_IN_FRYER LIFT_DRAIN PLATE PLACE_HANDOFF TO_WOK ADD_SAUCE ADD_INGREDIENTS STIR_FRY
+float32 duration
+# params_json: one JSON object. Keys in use:
+#   serving arm (AMR): {"table_id": int, "menu": str}
+#   cooking arms     : {"cook_task_id": str, "menu": str, "fry_time": float seconds (DROP_IN_FRYER only)}
+# Unknown keys must be ignored.
+string params_json
+---
+bool success
+string reason          # OK | CANCELED (goal canceled or emergency stop) | error text
+---
+string phase
+float32 progress

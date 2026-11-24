@@ -1,0 +1,15 @@
+<!-- One granted roadmap segment: plan on the global costmap, follow with the controller, re-plan once a second.
+     No spin / back-up recoveries: in the single-lane aisles the Task Manager resolves blockages, not the robot.
+     [수정 2026-11-17] UR-03: 제어기를 구간마다 고름. AMR 노드가 controller_selector 토픽에 FollowPath(전진)
+     또는 FollowPathReverse(후진, 손님 안내)를 보내고, 받은 적이 없으면 FollowPath 를 씀 -->
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <PipelineSequence name="SegmentWithReplanning">
+      <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
+      <RateController hz="1.0">
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+      </RateController>
+      <FollowPath path="{path}" controller_id="{selected_controller}"/>
+    </PipelineSequence>
+  </BehaviorTree>
+</root>

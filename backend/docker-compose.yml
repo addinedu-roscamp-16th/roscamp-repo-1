@@ -1,0 +1,49 @@
+# FryBot 로컬 서버 - MySQL (개인 초안, 팀 확정 전)
+services:
+  db:
+    image: mysql:8.4
+    container_name: frybot-mysql
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Asia/Seoul
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "3306:3306"   # 같은 네트워크의 팀원이 접속. 이 PC만 쓰려면 "127.0.0.1:3306:3306"
+    volumes:
+      - frybot_mysql:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro   # 볼륨이 비어 있을 때(첫 실행)만 실행됨
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]   # CMD-SHELL이어야 변수가 풀림
+      interval: 5s
+      retries: 20
+
+  adminer:                      # 웹 DB 관리 화면 (이 PC에서만: http://localhost:8081)
+    image: adminer:5
+    container_name: frybot-adminer
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "127.0.0.1:${ADMINER_PORT:-8081}:8080"
+    depends_on:
+      - db
+
+  api:                          # ROS <-> DB gateway (FastAPI). ROS calls http://<this PC>:8000
+    build: ./api
+    container_name: frybot-api
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_NAME: frybot
+      DB_USER: team_dev           # DML only, cannot change schema
+      DB_PASSWORD: ${TEAM_DEV_PASSWORD}
+      TZ: Asia/Seoul
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  frybot_mysql:

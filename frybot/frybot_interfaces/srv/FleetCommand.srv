@@ -1,0 +1,12 @@
+# Command to the Task Manager (target / arg):
+#   PAUSE (robot): 일시 중단. 그 자리에 세우고 임무를 SUSPENDED(사유 PAUSED)로 둠. RESUME 으로 이어서 수행
+#   ESTOP (robot / note)   RESUME (robot)   RETRY_TASK | REASSIGN | CANCEL_TASK (task id)
+#   SET_SCHEDULER | SET_PLANNER (name)   SET_STANDBY (on | off)   MOVE_TO_VERTEX (robot / roadmap node)
+#   GO_HOME (robot, or ALL = every connected robot): idle robots drive to their home node; busy or stopped ones are skipped
+# Failure: ok = false and message says why.
+string command
+string target
+string arg
+---
+bool ok
+string message
