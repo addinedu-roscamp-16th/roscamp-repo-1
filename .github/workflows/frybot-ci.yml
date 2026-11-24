@@ -1,0 +1,81 @@
+name: FryBot CI and delivery
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python syntax
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Python source when present
+        run: |
+          for directory in backend frybot; do
+            if [[ -d "$directory" ]]; then python -m compileall -q "$directory"; fi
+          done
+
+  frontend:
+    name: Frontend tests and build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  api:
+    name: API image build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - if: ${{ hashFiles('backend/api/Dockerfile') != '' }}
+        run: docker build --tag frybot-api:ci backend/api
+
+  delivery:
+    name: Package verified web and API
+    needs: [python, frontend, api]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - name: Export API image
+        if: ${{ hashFiles('backend/api/Dockerfile') != '' }}
+        run: |
+          docker build --tag "frybot-api:$GITHUB_SHA" backend/api
+          docker save "frybot-api:$GITHUB_SHA" | gzip > frybot-api.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frybot-${{ github.sha }}
+          path: |
+            frontend/dist/
+            frybot-api.tar.gz
+          if-no-files-found: error
+          retention-days: 14
