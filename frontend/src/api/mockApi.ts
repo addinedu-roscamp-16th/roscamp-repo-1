@@ -18,8 +18,8 @@ import { TABLES } from './storeLayout'
 
 /** 시안 메뉴. 가격은 DB 제안 단계라 예시 값 */
 export const MOCK_MENU: MenuItem[] = [
-  { menu_id: 1, name: '치킨', price: 18000, is_available: true },
-  { menu_id: 2, name: '볶음밥', price: 9000, is_available: true },
+  { menu_id: 1, name: '치킨', price: 18000, is_available: true, image_url: '/menu/chicken.webp' },
+  { menu_id: 2, name: '볶음밥', price: 9000, is_available: true, image_url: '/menu/fried-rice.webp' },
 ]
 
 export interface MockOptions {
