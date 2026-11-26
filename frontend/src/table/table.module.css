@@ -102,6 +102,14 @@
   font-size: 14px;
   color: var(--c-text-sub);
 }
+/* 배경이 투명한 메뉴 사진: 접시가 잘리지 않게 칸 안에 맞춰 넣음 */
+.menuPhotoImg {
+  background-color: rgb(244, 245, 247);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-origin: content-box;
+  padding: 8px;
+}
 .menuInfo {
   display: flex;
   align-items: baseline;

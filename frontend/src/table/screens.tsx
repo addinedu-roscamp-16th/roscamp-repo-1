@@ -79,7 +79,7 @@ export function T1Menu(props: {
               return (
                 <div key={m.menu_id} className={s.menuCard}>
                   <div
-                    className={s.menuPhoto}
+                    className={m.image_url ? `${s.menuPhoto} ${s.menuPhotoImg}` : s.menuPhoto}
                     style={m.image_url ? { backgroundImage: `url(${m.image_url})` } : undefined}
                   >
                     {soldOut ? '품절' : !m.image_url && '메뉴 사진'}
