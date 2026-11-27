@@ -9,6 +9,7 @@
     시간 기반 대역(관절 애니메이션)입니다.</description>
   <maintainer email="oneteam@example.com">OneTeam</maintainer>
   <license>Apache-2.0</license>
+  <!-- 실행 의존: 노드(rclpy, 메시지·액션)와 런치(launch, launch_ros) -->
   <exec_depend>rclpy</exec_depend>
   <exec_depend>action_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>

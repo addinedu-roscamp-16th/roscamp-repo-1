@@ -20,9 +20,9 @@ from frybot_control.planners.cooperative_astar import CooperativeAStarPlanner  #
 from frybot_control.planners.independent_astar import IndependentAStarPlanner  # noqa: E402
 from frybot_control.planners.sipp import SippPlanner  # noqa: E402
 
-SPEED = 0.135
-OVERHEAD = 2.27
-T0 = 10.0
+SPEED = 0.135  # 계획 속도(m/s), 실기기 보정값
+OVERHEAD = 2.27  # 구간 지연(초), 실기기 보정값
+T0 = 10.0  # 계획 시작 시각(초)
 
 
 @pytest.fixture(scope='module')
@@ -41,6 +41,7 @@ def _far_pair(graph):
 
 
 def _plan(planner, graph, overhead):
+    """빈 예약표에서 ENTRANCE -> DISH_RETURN 경로를 계획한 결과."""
     start, goal = _far_pair(graph)
     req = PlanRequest('pinky1', start, goal, T0, SPEED, overhead=overhead)
     table = ReservationTable(conflict=graph.conflict)

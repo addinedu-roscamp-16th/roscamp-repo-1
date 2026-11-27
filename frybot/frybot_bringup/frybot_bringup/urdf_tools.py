@@ -10,6 +10,18 @@ from ament_index_python.packages import get_package_share_directory
 # [수정 2026-11-17] 외부 pinky_description, mycobot_description 대신
 # frybot_description 안의 사본을 씀 (pinky_pro, mycobot_ros2 의존 제거)
 def pinky_urdf(namespace='', is_sim=False):
+    """Pinky Pro 의 URDF 문자열을 xacro 로 만든다.
+
+    Args:
+        namespace: 링크·조인트 이름 앞에 붙일 접두사(예: 'pinky1/').
+        is_sim: True 면 Gazebo 용 정의(pinky_gz.urdf.xacro)를 넣음.
+
+    Returns:
+        URDF XML 문자열.
+
+    Raises:
+        subprocess.CalledProcessError: xacro 가 실패할 때.
+    """
     path = os.path.join(get_package_share_directory('frybot_description'),
                         'pinky', 'urdf', 'robot.urdf.xacro')
     return subprocess.check_output(['xacro', path, f'namespace:={namespace}', f'is_sim:={"true" if is_sim else "false"}']).decode()
@@ -21,6 +33,7 @@ def jetcobot_urdf(scale=1.0):
     path = os.path.join(get_package_share_directory('frybot_description'),
                         'jetcobot', 'mycobot_280_pi.urdf')
     root = ET.parse(path).getroot()
+    # 관절 위치(origin xyz)와 메시 크기를 같은 배율로 줄임
     if scale != 1.0:
         for o in root.iter('origin'):
             if 'xyz' in o.attrib:
@@ -39,6 +52,7 @@ def pinky_gz_urdf(rid, fortress=False):
     # clip goes down because the robot stops 9-14 cm in front of the marker wall
     head, cam = urdf.split('type="camera">', 1)
     cam, tail = cam.split('</sensor>', 1)
+    # 카메라 640x360, near 0.02 m, 10 Hz, 센서 시각화 끔
     for pat, new in ((r'<width>\d+</width>', '<width>640</width>'), (r'<height>\d+</height>', '<height>360</height>'),
                      (r'<near>[\d.]+</near>', '<near>0.02</near>'), (r'<update_rate>\d+</update_rate>', '<update_rate>10</update_rate>'),
                      (r'<visualize>true</visualize>', '<visualize>false</visualize>')):

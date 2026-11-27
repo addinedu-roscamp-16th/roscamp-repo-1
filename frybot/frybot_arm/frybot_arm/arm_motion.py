@@ -4,12 +4,17 @@
 """
 import math
 
+# 관절 이름(myCobot 280 URDF, 베이스 -> 끝 순서). joint_states 에 씀
 JOINTS = ['joint2_to_joint1', 'joint3_to_joint2', 'joint4_to_joint3',
           'joint5_to_joint4', 'joint6_to_joint5', 'joint6output_to_joint6']
+# 휴식 자세(rad, JOINTS 순서). 작업 전후와 대기 중 자세
 REST = [0.0, 0.5, -1.9, 1.3, 0.0, 0.0]
 
 # 작업 -> (베이스 yaw, 뻗은 자세). yaw 는 팔 베이스 기준.
 POSES = {
+    # 팔 A(튀김): 바구니 담기·튀김기에 넣기·건져 기름 빼기, 웍으로 옮기기,
+    # 볶음밥 재료 넣기. 팔 B(웍): 소스·볶기. PLATE·PLACE_HANDOFF 는 둘 다
+    # (fleet_core._recipe 기준)
     'LOAD_BASKET': (0.9, [0.0, -0.9, -0.9, 0.2, 0.0, 0.0]),
     'DROP_IN_FRYER': (-0.6, [0.0, -1.2, -0.4, 0.0, 0.0, 0.0]),
     'LIFT_DRAIN': (-0.6, [0.0, -0.7, -0.9, 0.0, 0.0, 0.6]),
@@ -39,6 +44,7 @@ def arm_pose(job: str, progress: float, t: float = 0.0) -> list[float]:
     k = math.sin(math.pi * min(max(progress, 0.0), 1.0))    # 0 -> 1 -> 0
     q = [REST[i] + (reach[i] - REST[i]) * k for i in range(6)]
     q[0] = yaw * min(1.0, k * 1.5)
+    # 웍 흔들기: 진행률 10~90% 구간에서 베이스와 4번째 관절을 흔듦
     if job == 'STIR_FRY' and 0.1 < progress < 0.9:
         q[0] += 0.25 * math.sin(t * 6.0)
         q[3] += 0.2 * math.sin(t * 6.0 + 1.0)

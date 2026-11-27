@@ -28,6 +28,7 @@ def _plan_speeds(**plan) -> set[float]:
     seen = set()
     plan_fn = w.core.planner.plan
 
+    # 원래 plan 을 감싸 요청 속도를 기록한 뒤 그대로 계획함
     def spy(graph, req, table):
         seen.add(round(req.speed, 4))
         return plan_fn(graph, req, table)

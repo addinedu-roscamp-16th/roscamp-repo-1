@@ -40,6 +40,7 @@ class _IO(RestaurantIO):
 
 
 def _blocked_world():
+    """W3 에 비상 정지된 pinky1, 그리로 가라는 명령을 받은 pinky2."""
     # 다른 테스트 파일이 import 할 때 지도를 바꿀 수 있어, 만들 때 정함
     os.environ['FRYBOT_MAP_ID'] = 'test_map_v001'
     w = MockFleet(['pinky1', 'pinky2'], TimeModel('ideal', 0.08), dt=0.1,
@@ -54,6 +55,7 @@ def _blocked_world():
 
 
 def _run_until_suspend(w, limit):
+    """보류(SUSPENDED)가 한 번 날 때까지(최대 limit 초) 돌린 시간(초)."""
     start = w.t
     w.suspended = 0
     while w.t < start + limit and not w.suspended:

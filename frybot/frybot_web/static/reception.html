@@ -5,6 +5,7 @@
 <div class="screen">
  <div class="bar"><b>FryBot 레스토랑</b><span class="sp"></span><a href="/">처음으로</a></div>
 
+ <!-- K1: 인원 선택(1~4명) -->
  <div class="stage" id="k1">
   <div class="hello">어서 오세요 · FryBot 레스토랑</div>
   <h1>몇 분이신가요?</h1>
@@ -14,6 +15,7 @@
   <div class="msg" id="msg" role="status"></div>
  </div>
 
+ <!-- K2: 배정된 테이블과 매장 지도(가상 매장만), 안내 로봇 호출 중 -->
  <div class="stage" id="k2" hidden>
   <h2>자리를 찾았어요</h2>
   <div class="bigno" data-table></div>
@@ -22,6 +24,7 @@
   <h2 id="coming">안내 로봇을 부르고 있어요</h2>
  </div>
 
+ <!-- K3: 안내 로봇이 모두 바쁨. 대기 순번과 기다린 시간 -->
  <div class="stage" id="k3" hidden>
   <div class="sub"><b data-table></b> 테이블은 맡아 두었어요</div>
   <h1>안내 로봇이 모두<br>다른 손님을 모시고 있어요</h1>
@@ -29,6 +32,7 @@
   <div class="note">로봇이 도착하면 이 화면으로 알려 드려요</div>
  </div>
 
+ <!-- K4: 로봇 도착, 안내 시작(10초 뒤 첫 화면으로) -->
  <div class="stage" id="k4" hidden>
   <h2>로봇이 도착했어요</h2>
   <h1>로봇을 따라 <span style="color:var(--brand)" data-table></span> 테이블로 가세요</h1>
@@ -36,6 +40,7 @@
   <div class="note" id="back"></div>
  </div>
 
+ <!-- 안내 실패·접수 취소·거절 -->
  <div class="stage" id="kfail" hidden>
   <h1>안내를 계속할 수 없어요</h1>
   <div class="sub" id="failMsg">직원을 불러 주세요.</div>
@@ -44,17 +49,22 @@
 </div>
 <script src="/static/map.js"></script><script src="/static/ui.js"></script><script>
 const $id = id => document.getElementById(id);
+// 접수 상태. L: 가상 매장 도면(/api/layout), builtinMap: 가상 매장
+// 실행인지(실측 지도 실행이면 지도를 그리지 않음)
 let party = 0, visitId = 0, tableId = 0, step = 'k1', L = null, builtinMap = true, backAt = 0;
+// 단계 화면 하나만 보이게 함
 function show(name) {
   step = name;
   ['k1', 'k2', 'k3', 'k4', 'kfail'].forEach(id => { $id(id).hidden = id !== name; });
 }
+// 첫 화면(K1)으로 되돌림
 function reset() {
   party = 0; visitId = 0; tableId = 0; backAt = 0;
   $id('msg').textContent = '';
   renderNums();
   show('k1');
 }
+// 인원 버튼(1~4)과 자리 찾기 버튼
 function renderNums() {
   $id('nums').innerHTML = [1, 2, 3, 4].map(n => '<button type="button" data-n="' + n + '" class="' + (n === party ? 'on' : '') + '">' + n + '</button>').join('');
   const find = $id('find');
@@ -65,11 +75,13 @@ $id('nums').addEventListener('click', e => {
   const b = e.target.closest('[data-n]');
   if (b) { party = +b.dataset.n; $id('msg').textContent = ''; renderNums(); }
 });
+// [수정 2026-11-25] I/F 정의서 v0.2 경로: /api/checkin -> /api/visits
+// 자리 찾기: POST /api/visits. 성공하면 배정 테이블을 보이고 K2
 $id('find').addEventListener('click', async () => {
   const find = $id('find');
   find.disabled = true;
   try {
-    const r = await postJSON('/api/checkin', {party_size: party});
+    const r = await postJSON('/api/visits', {party_size: party});
     if (!r.ok) { $id('msg').textContent = r.message || '지금은 자리를 찾을 수 없어요. 직원을 불러 주세요.'; find.disabled = false; return; }
     visitId = r.visit_id; tableId = r.table_id;
     document.querySelectorAll('[data-table]').forEach(el => { el.textContent = 'T' + tableId; });
@@ -83,6 +95,9 @@ $id('find').addEventListener('click', async () => {
   }
 });
 $id('restart').addEventListener('click', reset);
+// 1초마다 /api/state 에서 이 방문의 상태를 보고 단계를 고름.
+// ASSIGNED+로봇 없음 → K3, ASSIGNED → K2, GUIDING → K4,
+// SEATED·LEFT → 처음, 그 밖(GUIDE_FAILED 등) → 실패 화면
 async function tick() {
   if (!visitId) return;
   let S;
@@ -112,6 +127,7 @@ async function tick() {
     show('kfail');
   }
 }
+// 도면과 지도 목록을 한 번 읽음(maps.active 가 비면 가상 매장)
 Promise.all([getJSON('/api/layout'), getJSON('/api/maps')]).then(([layout, maps]) => { L = layout; builtinMap = !maps.active; }).catch(() => {});
 renderNums();
 setInterval(tick, 1000);

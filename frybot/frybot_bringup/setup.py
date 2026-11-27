@@ -1,8 +1,14 @@
+"""frybot_bringup 패키지 설치 설정(ament_python).
+
+launch/*.py, config/*.yaml, rviz/*.rviz 를 share 에 설치하고
+실행 파일 fleet_rviz, robot_remote, wait_online 을 등록한다.
+"""
 from glob import glob
 from setuptools import setup
 package_name = 'frybot_bringup'
 setup(
     name=package_name, version='0.1.0', packages=[package_name],
+    # share/frybot_bringup 아래에 설치할 파일(색인 표시, package.xml, 런치 등)
     data_files=[('share/ament_index/resource_index/packages', ['resource/' + package_name]),
                 ('share/' + package_name, ['package.xml']),
                 ('share/' + package_name + '/launch', glob('launch/*.py')),

@@ -20,7 +20,7 @@ def apply_sim_network(net: str, sim_domain: str) -> None:
     """
     if net not in ('sim', 'local', 'lan'):
         raise ValueError(f'net:={net} 는 sim | local | lan 중 하나여야 합니다.')
-    if net == 'lan':
+    if net == 'lan':  # 환경 변수를 그대로 둠
         return
     if net == 'sim' and not (sim_domain.isdigit()
                              and 0 <= int(sim_domain) <= 101):

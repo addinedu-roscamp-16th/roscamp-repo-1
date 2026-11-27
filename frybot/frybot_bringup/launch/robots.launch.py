@@ -17,6 +17,17 @@ from frybot_bringup.remote import (pick_robots, registered, registry_notice,
 
 
 def setup(context):
+    """등록부의 로봇마다 SSH 기동 프로세스(robot_remote)를 만든다.
+
+    discovery, poses 는 넘기지 않아 robot_remote 기본(peers)으로 뜨고,
+    관제 PC 쪽 ROS_STATIC_PEERS 는 정하지 않는다(real.launch.py 와 다름).
+
+    Args:
+        context: 런치 컨텍스트.
+
+    Returns:
+        등록부 안내 로그(없을 때)와 로봇별 ExecuteProcess 목록.
+    """
     g = lambda k: LC(k).perform(context)
     reg = registered(g('robots_file'))
     # [수정 2026-11-18] T-30: 등록부가 없으면 안내 로그
@@ -28,6 +39,11 @@ def setup(context):
 
 
 def generate_launch_description():
+    """robots, map_id, robots_file 인자를 선언하고 setup 을 붙인다.
+
+    Returns:
+        LaunchDescription.
+    """
     args = [('robots', ''), ('map_id', ''), ('robots_file', '')]
     return LaunchDescription([DeclareLaunchArgument(k, default_value=v) for k, v in args] +
                              [OpaqueFunction(function=setup)])

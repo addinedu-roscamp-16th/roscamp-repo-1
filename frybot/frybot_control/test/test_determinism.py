@@ -14,6 +14,9 @@ import sys
 
 import pytest
 
+# 하위 프로세스에서 돌릴 모의 실행. 인자: 종류(moves2·moves3·rush), 씨앗,
+# 플래너. 실기기 보정 시간 모델(0.135 m/s, 2.27초, 흔들림 0.2)로 돌리고
+# 지표 한 줄(JSON)을 출력함. plan_ms 는 벽시계 값이라 뺌
 _SCRIPT = r'''
 import json, os, sys
 from frybot_control import mock_fleet
@@ -34,12 +37,14 @@ row.pop('plan_ms', None)
 print(json.dumps(row, sort_keys=True, default=str))
 '''
 
+# (종류, 씨앗, 플래너). moves* 는 실측 지도 test_map_v001, rush 는 가상 매장
 CASES = [('moves2', 19, 'independent_astar'),
          ('moves3', 1, 'independent_astar'),
          ('moves3', 5, 'sipp'), ('rush', 3, 'sipp')]
 
 
 def _run(hash_seed: str, case) -> dict:
+    """PYTHONHASHSEED=hash_seed 인 하위 프로세스로 case 를 돌린 지표."""
     env = dict(os.environ, PYTHONHASHSEED=hash_seed)
     cmd = [sys.executable, '-c', _SCRIPT] + [str(c) for c in case]
     out = subprocess.run(cmd,

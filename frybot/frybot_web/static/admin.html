@@ -21,6 +21,7 @@
 <div id="toast" role="status"></div>
 <main>
 
+<!-- A1 통합 관제: 요약, 장치 목록, 지도·이동 명령, 임무 큐, 상세, 최근 알람 -->
 <section id="tab-monitor">
  <div class="summary" id="summary"></div>
  <div class="cols">
@@ -61,6 +62,7 @@
  </div>
 </section>
 
+<!-- A2 테이블·주문: 테이블 카드, 조리 구역, 주문·조리 현황 -->
 <section id="tab-tables" hidden>
  <div class="summary" id="tableSummary"></div>
  <div class="tgrid" id="tableCards"></div>
@@ -74,6 +76,7 @@
  </div>
 </section>
 
+<!-- A3 알람·이력: 알람 목록과 상세, 운영 이력 조회(/api/events) -->
 <section id="tab-alarms" hidden>
  <div class="two">
   <div>
@@ -105,6 +108,7 @@
  </div>
 </section>
 
+<!-- 설정: 스케줄러·플래너 교체, 대기 위치 사용, 관제 지표 -->
 <section id="tab-settings" hidden>
  <div class="two">
   <div class="card"><h2>알고리즘 (실행 중 교체)</h2><div class="body">
@@ -117,14 +121,21 @@
 </main>
 <script src="/static/map.js"></script><script src="/static/ui.js"></script><script>
 const $id = id => document.getElementById(id);
+// 자주 쓰는 요소
 const cv = $id('cv'), mapSelect = $id('mapSelect'), mapStatus = $id('mapStatus');
 const moveForm = $id('vertexMove'), moveRobot = $id('moveRobot'), moveVertex = $id('moveVertex');
 const mapStations = $id('mapStations'), stationList = $id('stationList');
+// 화면 상태. L: 가상 매장 도면, catalog: /api/maps 응답, selectedMap:
+// 고른 실측 지도(가상 매장이면 null), loadedMap: 다 불러온 지도 id,
+// lastState: 마지막 /api/state, filled: 알고리즘 선택 상자를 채웠는지
 let L = null, catalog = null, selectedMap = null, loadedMap = null, lastState = {}, filled = false;
+// selected: 고른 장치 id, alarmSel: 고른 알람 키
 let selected = '', showRoute = true, showNode = true, ordersTab = 'open', alarmLevel = '', alarmSel = '';
+// 관제 상태의 now 가 마지막으로 바뀐 때(연결 표시용), 웹 서비스 응답 여부
 let lastFleetNow = 0, lastFleetSeen = 0, webOk = true;
 
 // ---- 탭
+// 탭 하나만 보이게 함. 주소의 #이름 으로 고름
 function showTab(name) {
   if (!$id('tab-' + name)) name = 'monitor';
   document.querySelectorAll('main>section').forEach(s => { s.hidden = s.id !== 'tab-' + name; });
@@ -132,6 +143,7 @@ function showTab(name) {
   if (name === 'alarms') loadHistory();
   if (name === 'monitor') showMap();
 }
+// 탭 버튼은 주소의 # 만 바꾸고, hashchange 가 탭을 바꿈
 $id('tabs').addEventListener('click', e => {
   const button = e.target.closest('button');
   if (button) location.hash = button.dataset.tab;
@@ -139,6 +151,7 @@ $id('tabs').addEventListener('click', e => {
 addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 
 // ---- 명령
+// 명령 결과 알림(5초 동안)
 function toast(ok, message) {
   const el = $id('toast');
   el.textContent = (ok ? '✔ ' : '✖ ') + message;
@@ -153,10 +166,12 @@ async function admPost(body) {
   const headers = {'Content-Type': 'application/json'};
   const token = localStorage.getItem('frybotAdminToken');
   if (token) headers['X-Admin-Token'] = token;
-  const res = await fetch(API + '/api/admin',
+  // [수정 2026-11-25] I/F 정의서 v0.2 경로: /api/admin -> /api/admin/operations
+  const res = await fetch(API + '/api/admin/operations',
     {method: 'POST', headers, body: JSON.stringify(body)});
   return res.json();
 }
+// 관리자 명령 보내기(POST /api/admin/operations). 토큰이 필요하면 한 번 묻고 다시 보냄
 async function adm(command, target, arg) {
   try {
     const body = {command, target, arg: arg || ''};
@@ -175,6 +190,8 @@ async function adm(command, target, arg) {
 }
 // 화면이 0.5초마다 다시 그려져 click(누름+뗌)이 사라질 수 있으므로 누르는 순간에 명령을 보낸다
 let lastPress = 0;
+// data-cmd 버튼 공통 처리. 누를 때 보낸 뒤 0.8초 안의 click 은 무시,
+// data-confirm 이 있으면 먼저 확인
 function onCommand(e) {
   const button = e.target.closest('[data-cmd]');
   if (!button || button.disabled) return;
@@ -185,11 +202,14 @@ function onCommand(e) {
 }
 document.addEventListener('pointerdown', onCommand);
 document.addEventListener('click', onCommand);
+// 관리자 명령 버튼 마크업(data-cmd, data-target, data-arg, data-confirm)
 const cmdBtn = (label, cmd, target, arg, cls, ask) =>
   '<button class="btn ' + (cls || '') + '" type="button" data-cmd="' + cmd + '" data-target="' + esc(target) +
   '" data-arg="' + esc(arg || '') + '"' + (ask ? ' data-confirm="' + esc(ask) + '"' : '') + '>' + label + '</button>';
 
 // ---- 지도 (기존 지도 선택 · 노드 이동 명령을 그대로 유지)
+// 고른 지도를 그림. 관제가 쓰는 지도면 로봇도 그리고, 실측 지도면
+// 연결된 로봇의 이동 명령 양식을 보임
 function showMap() {
   if (!catalog || loadedMap !== mapSelect.value) return;
   const active = catalog.active === mapSelect.value;
@@ -209,6 +229,7 @@ function showMap() {
     }
   }
 }
+// 실측 지도의 운영 지점(stations-<map_id>.json) 목록 표시
 function showStations(stations) {
   mapStations.hidden = !stations.length;
   stationList.replaceChildren(...stations.map(station => {
@@ -220,6 +241,8 @@ function showStations(stations) {
     return item;
   }));
 }
+// 고른 지도 불러오기: 실측 지도는 /api/map 의 그림·노드와 운영 지점,
+// 가상 매장(id 빈 문자열)은 도면(L)으로 그림
 async function selectMap() {
   const id = mapSelect.value;
   mapStatus.textContent = '지도 불러오는 중';
@@ -256,6 +279,7 @@ async function selectMap() {
   }
 }
 mapSelect.addEventListener('change', selectMap);
+// 이동 명령: MOVE_TO_VERTEX(로봇, 목적 노드). 관제가 쓰는 지도일 때만
 moveForm.addEventListener('submit', async event => {
   event.preventDefault();
   if (!catalog || mapSelect.value !== catalog.active || !moveVertex.value || moveForm.hidden) return;
@@ -264,12 +288,14 @@ moveForm.addEventListener('submit', async event => {
   try { await adm('MOVE_TO_VERTEX', moveRobot.value, moveVertex.value); }
   finally { button.disabled = false; }
 });
+// 경로·노드 표시 켜기/끄기
 $id('togRoute').addEventListener('click', e => { showRoute = !showRoute; e.target.classList.toggle('on', showRoute); showMap(); });
 $id('togNode').addEventListener('click', e => { showNode = !showNode; e.target.classList.toggle('on', showNode); showMap(); });
 // [수정 2026-11-17] T-27: 지도 목록을 페이지를 열 때 한 번만 받아, 관제를 다른
 // 지도로 다시 띄우면 "관제 사용 중" 판정이 어긋나 로봇이 지도에 나오지 않았음.
 // 다시 받는 함수로 묶어 새로고침 버튼과 실행 변경 감지(tick)에서 함께 씀
 let catalogRun = '', catalogTried = 0, catalogBusy = false;
+// 도면(/api/layout)과 지도 목록(/api/maps)을 받고 관제의 지도를 고름
 async function loadCatalog() {
   if (catalogBusy) return;
   catalogBusy = true;
@@ -288,6 +314,7 @@ async function loadCatalog() {
     catalogBusy = false;
   }
 }
+// 새로고침 버튼: 지도 목록과 상태를 바로 다시 받음
 $id('mapReload').addEventListener('click', async e => {
   e.target.disabled = true;
   try { await loadCatalog(); await tick(); }
@@ -302,25 +329,33 @@ function checkCatalog(S) {
   if (run) catalogRun = run;
   if ((changed || mismatch || !catalog) && Date.now() - catalogTried > 3000) loadCatalog();
 }
+// 페이지를 열 때 한 번 받음
 loadCatalog();
 
 // ---- 공통 계산
+// 배터리 막대(20% 미만 crit, 40% 미만 low)
 const batteryBar = pct => '<div class="bar"><i class="' + (pct < 20 ? 'crit' : pct < 40 ? 'low' : '') +
   '" style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></div>';
+// 임무 대상 문구('3번 · 주문 #2 · 메뉴'). MOVE 는 '노드 이동'
 function taskTarget(t) {
   if (!t) return '';
   const menu = t.menu ? ' · ' + (((lastState.rest || {}).menu || {})[t.menu] || {name: t.menu}).name : '';
   if (t.type === 'MOVE') return '노드 이동';
   return (t.table ? t.table + '번' : '—') + (t.order ? ' · 주문 #' + t.order : '') + menu;
 }
+// 장치 목록의 로봇 한 줄 설명(임무, 복귀 중, 충전대, 대기 위치, 임무 없음)
 function robotTaskLine(r, tasks) {
   const t = tasks.find(x => x.id === r.task);
   if (t) return (TASK_KO[t.type] || t.type) + ' · ' + taskTarget(t);
   if (r.state === 'RETURNING') return '복귀 중';
   return r.charging ? '충전대' : (r.state === 'STANDBY' ? '대기 위치' : '임무 없음');
 }
+// 메뉴 코드 → 메뉴 이름(식당 상태의 menu)
 const menuName = code => (((lastState.rest || {}).menu || {})[code] || {name: code}).name;
+// 조리 팔: [장치 id, 팔 자원, 표시 이름, 조리 기구 자원(튀김기·웍)].
+// 자원 이름은 관제 cooking.resources 의 키
 const ARMS = [['cook_arm_a', 'ARM_A', '튀김 로봇팔', 'FRYER'], ['cook_arm_b', 'ARM_B', '웍 로봇팔', 'WOK']];
+// 조리 팔 하나의 상태(장치 보고, 맡은 조리 작업, 작업 중, 오류)
 function armInfo(F, arm) {
   const C = F.cooking || {}, device = (C.arms || {})[arm[0]] || {};
   const owner = (C.resources || {})[arm[1]] || (C.resources || {})[arm[3]];
@@ -329,6 +364,9 @@ function armInfo(F, arm) {
   return {id: arm[0], label: arm[2], device, job, busy,
           error: device.error_code && device.error_code !== 'ERR_000'};
 }
+// 알람 목록 만들기: 보류된 임무(incidents), 로봇 연결 끊김·비상 정지·
+// 일시 중단·오류·노드 이탈·배터리 부족·부착 팔 오류, 조리 팔 오류.
+// 미해결이 먼저, 그다음 최근 것이 먼저
 function buildAlarms(S) {
   const R = S.rest || {}, F = S.fms || {}, out = [];
   // [수정 2026-11-17] UR-18: 관리자가 일시 중단한 임무는 오류가 아닌 경고
@@ -362,13 +400,17 @@ function buildAlarms(S) {
   });
   return out.sort((a, b) => (b.open - a.open) || (b.time - a.time));
 }
+// 알람 등급 → [표시 이름, 배지 클래스]
 const LEVEL = {error: ['오류', 'b-bad'], warn: ['경고', 'b-warn'], info: ['정보', 'b-mute']};
+// 알람 한 줄 마크업. pick 이면 눌러서 고를 수 있음
 const alarmRow = (a, pick) => '<div class="alarm' + (pick ? ' pick' : '') + (pick && a.key === alarmSel ? ' sel' : '') +
   '" data-alarm="' + esc(a.key) + '"><div class="r1"><span class="badge ' + LEVEL[a.level][1] + '">' + LEVEL[a.level][0] +
   '</span><b>' + esc(a.device) + '</b><span>' + esc(a.code) + '</span><span style="margin-left:auto">' +
   (a.time ? clock(a.time) : '') + '</span></div><div>' + esc(a.msg) + '</div></div>';
 
 // ---- A1 통합 관제
+// A1 그리기: 요약 줄, 장치 목록(로봇·조리 팔), 임무 큐(진행 중 + 최근
+// 끝난 4건), 상세, 최근 알람 3건
 function renderMonitor(S) {
   const R = S.rest || {}, F = S.fms || {}, robots = F.robots || [], tasks = F.tasks || [];
   const count = {};
@@ -417,6 +459,8 @@ function renderMonitor(S) {
   const alarms = buildAlarms(S);
   $id('recent').innerHTML = alarms.slice(0, 3).map(a => alarmRow(a, false)).join('') || '<div class="empty">알람 없음</div>';
 }
+// 고른 장치의 상세: 조리 팔이면 작업·오류, 로봇이면 상태·위치·임무 단계와
+// 명령 버튼(재시도·재할당, 홈 복귀, 일시 중단, 재개, 비상 정지)
 function renderDetail(S, robots, arms, tasks) {
   const el = $id('detail'), r = robots.find(x => x.id === selected), a = arms.find(x => x.id === selected);
   if (a) {
@@ -440,7 +484,10 @@ function renderDetail(S, robots, arms, tasks) {
     '<div><dt>목적지</dt><dd>' + esc(goal || '—') + (t && t.table ? ' (' + t.table + '번 테이블)' : '') + '</dd></div>' +
     '<div><dt>임무 · 주문</dt><dd>' + esc(t ? t.id + (t.order ? ' · #' + t.order : '') : '—') + '</dd></div>' +
     '<div><dt>위치 x · y · θ</dt><dd>' + r.x.toFixed(2) + ' · ' + r.y.toFixed(2) + ' · ' + Math.round(r.yaw * 180 / Math.PI) + '°</dd></div>' +
-    '<div><dt>남은 거리 · 배터리</dt><dd>' + (r.dist || 0).toFixed(2) + ' m · ' + Math.round(r.battery) + '%' + (r.charging ? ' ⚡' : '') + '</dd></div>' +
+    // [수정 2026-11-20] T-53: 누적 주행 거리(dist) 대신 현재 경로의 남은 거리
+    '<div><dt>남은 거리 · 배터리</dt><dd>' + (r.route && r.route.length && r.remaining != null ? r.remaining.toFixed(2) + ' m' : '—') + ' · ' + Math.round(r.battery) + '%' + (r.charging ? ' ⚡' : '') + '</dd></div>' +
+    // [수정 2026-11-20] T-53: 누적 주행 거리(snapshot dist, 관제가 받은 위치 보고의 합)
+    '<div><dt>누적 주행 거리</dt><dd>' + (r.dist || 0).toFixed(2) + ' m</dd></div>' +
     '<div><dt>현재 노드</dt><dd>' + esc(r.heading ? r.node + ' → ' + r.heading : r.node) + '</dd></div>' +
     '<div><dt>기기 상태</dt><dd>' + esc(r.device ? r.device.code + ' ' + r.device.ko : '—') +
     (r.device && r.device.error_code !== 'ERR_000' ? ' · ' + esc(r.device.error_code) : '') + '</dd></div>' +
@@ -466,12 +513,15 @@ function renderDetail(S, robots, arms, tasks) {
     (r.state === 'E_STOP' || r.state === 'PAUSED' ? cmdBtn('재개', 'RESUME', r.id, '', 'primary') : '') +
     (r.state === 'E_STOP' ? '' : cmdBtn('비상 정지', 'ESTOP', r.id, 'admin', 'danger')) + '</div></div>';
 }
+// 장치 목록에서 고르기
 $id('devList').addEventListener('click', e => {
   const row = e.target.closest('[data-dev]');
   if (row) { selected = row.dataset.dev; render(lastState); showMap(); }
 });
 
 // ---- A2 테이블 · 주문 · 조리
+// A2 그리기: 테이블 요약·카드(상태별 명령 버튼), 조리 구역, 주문 목록
+// (진행 중/완료 최근 12건)
 function renderTables(S) {
   const R = S.rest || {}, F = S.fms || {}, tables = R.tables || [], visits = {}, now = R.now || 0;
   (R.visits || []).forEach(v => { visits[v.id] = v; });
@@ -522,6 +572,7 @@ function renderTables(S) {
       return '<span class="chip ' + (stage === undefined ? 's-hold' : 's' + stage) + '">' + esc(i.name) + ' · ' + (stage === undefined ? ko(i.state) : STAGE_KO[stage]) + '</span>';
     }).join('') + '</td></tr>').join('') || '<tr><td colspan="4" class="mute">' + (ordersTab === 'done' ? '완료된' : '진행 중인') + ' 주문이 없습니다.</td></tr>');
 }
+// 주문 목록 진행 중/완료 필터
 document.querySelectorAll('[data-orders]').forEach(b => b.addEventListener('click', () => {
   ordersTab = b.dataset.orders;
   document.querySelectorAll('[data-orders]').forEach(x => x.classList.toggle('on', x === b));
@@ -529,6 +580,8 @@ document.querySelectorAll('[data-orders]').forEach(b => b.addEventListener('clic
 }));
 
 // ---- A3 알람 · 이력
+// A3 알람: 미해결 오류 수(탭 배지), 등급 필터 목록, 고른 알람의 상세와
+// 복구 버튼
 function renderAlarms(S) {
   const all = buildAlarms(S), open = all.filter(a => a.open && a.level === 'error').length;
   const cnt = $id('alarmCount');
@@ -552,6 +605,7 @@ function renderAlarms(S) {
       cmdBtn('작업 취소', 'CANCEL_TASK', t.id, 'admin', 'danger', t.id + ' 임무를 취소할까요?') + '</div>' : '') +
     (r && (r.state === 'E_STOP' || r.state === 'PAUSED') ? '<div class="btnrow" style="margin-top:14px">' + cmdBtn('재개', 'RESUME', r.id, '', 'primary') + '</div>' : '');
 }
+// 알람 고르기, 등급 필터
 $id('alarmList').addEventListener('click', e => {
   const row = e.target.closest('[data-alarm]');
   if (row) { alarmSel = row.dataset.alarm; renderAlarms(lastState); }
@@ -563,11 +617,13 @@ $id('alarmFilter').addEventListener('click', e => {
   document.querySelectorAll('#alarmFilter button').forEach(x => x.classList.toggle('on', x === b));
   renderAlarms(lastState);
 });
+// 이력 조회 종류 → /api/events 의 prefix(포함)·skip(제외) 이벤트 접두어
 const HIST = {
   main: {skip: 'ZONE_,PLAN,EVT_,ARM_,COOK_STEP,HOME'}, guide: {prefix: 'CHECKIN,SEATED,EVT_AT_START,EVT_ARRIVED,END_USE,TABLE_'},
   order: {prefix: 'ORDER,COOK_,DONENESS,DELIVERED,EVT_COOKING,EVT_READY,EVT_LOADED,EVT_SERVING,EVT_DELIVERED'},
-  task: {prefix: 'TASK_,EVT_ASSIGNED,EVT_DONE,HOME'}, traffic: {prefix: 'ZONE_,PLAN,YIELD,REPLAN,RETREAT,STALL'},
+  task: {prefix: 'TASK_,EVT_ASSIGNED,EVT_DONE,HOME'}, traffic: {prefix: 'ZONE_,PLAN,YIELD,REPLAN,RETREAT'},
   fail: {prefix: 'TASK_SUSPEND,PLAN_FAIL,EVT_SUSPENDED,EVT_CANCELED,ESTOP,PAUSE,CHECKIN_REJECT,ROUTE_RETRY,REJOIN'}, all: {}};
+// 운영 이력 조회(최근 300건). 기간을 주면 다른 실행 기록도 함께 찾음
 async function loadHistory() {
   const q = HIST[$id('histKind').value] || {}, info = $id('histInfo');
   info.textContent = '불러오는 중';
@@ -585,19 +641,23 @@ async function loadHistory() {
         '</td><td class="mute">' + esc(e.reason) + '</td></tr>').join('');
   } catch (error) { info.textContent = '이력을 불러올 수 없습니다.'; }
 }
+// 조회 버튼, 종류·결과 변경, 기간 지움
 $id('histLoad').addEventListener('click', loadHistory);
 $id('histKind').addEventListener('change', loadHistory);
 $id('histResult').addEventListener('change', loadHistory);
 $id('histClear').addEventListener('click', () => { $id('histFrom').value = ''; $id('histTo').value = ''; loadHistory(); });
 
 // ---- 설정 (기존 알고리즘 교체 · 지표)
+// 관제 지표(fms metrics) 키 → 표시 이름
 const MK = {grants: '통행 허가', blocked_wait: '점유 대기(초)', planned_wait: '계획 대기(초)', stalls: '정체 감지', replans: '재계획', retreats: '비켜서기',
   flips: '우선순위 교환', plan_fail: '계획 실패', plan_calls: '계획 호출', plan_ms: '계획 시간 합(ms)', tasks_done: '완료 임무', yields: '양보(대기·비켜 주기)',
   rejoins: '노드 복귀', route_retries: '주행 실패 자동 재시도', reassign: '재배정', joint_plans: '공동 계획', joint_fail: '공동 계획 실패'};
+// 알고리즘 교체·대기 위치 사용: 바꾸면 바로 관리자 명령을 보냄
 const sch = $id('sch'), pln = $id('pln'), sb = $id('sb');
 sch.addEventListener('change', () => adm('SET_SCHEDULER', sch.value));
 pln.addEventListener('change', () => adm('SET_PLANNER', pln.value));
 sb.addEventListener('change', () => adm('SET_STANDBY', sb.checked ? 'on' : 'off'));
+// 설정 그리기: 선택 상자는 처음 한 번 채우고, 사용 중이 아니면 현재 값으로
 function renderSettings(S) {
   const F = S.fms || {}, A = F.algorithms;
   if (A) {
@@ -615,13 +675,16 @@ function renderSettings(S) {
 }
 
 // ---- 갱신
+// 모든 탭 다시 그리기
 function render(S) { renderMonitor(S); renderTables(S); renderAlarms(S); renderSettings(S); }
+// 연결 표시: 웹 서비스 응답, 관제 상태가 3초 넘게 안 바뀌면 수신 없음
 function renderConn() {
   const el = $id('conn'), stale = Date.now() - lastFleetSeen > 3000;
   const state = !webOk ? ['bad', '웹 서비스 끊김'] : !lastFleetSeen ? ['warn', '관제 대기'] : stale ? ['bad', '관제 수신 없음'] : ['ok', '연결됨'];
   el.innerHTML = '<i class="dot ' + state[0] + '"></i>ROS2 <b>' + state[1] + '</b>';
   $id('clock').textContent = clock(Date.now() / 1000);
 }
+// 0.5초마다 /api/state 를 받아 화면을 다시 그림
 async function tick() {
   try {
     const S = await getJSON('/api/state');
@@ -636,6 +699,7 @@ async function tick() {
   } catch (error) { webOk = false; }
   renderConn();
 }
+// 시작: 주소의 탭을 열고 0.5초마다 갱신
 showTab(location.hash.slice(1) || 'monitor');
 setInterval(tick, 500); tick();
 </script></body></html>

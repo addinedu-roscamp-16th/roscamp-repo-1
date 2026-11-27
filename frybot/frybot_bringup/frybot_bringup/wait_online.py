@@ -18,10 +18,13 @@ class WaitOnline(Node):
 
     def __init__(self) -> None:
         super().__init__('wait_online')
+        # robot_ids: 기다릴 로봇 이름 목록
         robots = self.declare_parameter('robot_ids', ['pinky1']).value
+        # timeout_sec: 이 초가 지나면 기다리지 않고 끝냄(런치의 rviz_wait_sec)
         self.timeout = float(
             self.declare_parameter('timeout_sec', 120.0).value)
-        self.waiting = set(robots)
+        self.waiting = set(robots)  # 아직 보고하지 않은 로봇
+        # 로봇 상태 보고(10 Hz)를 받으면 그 로봇을 목록에서 지움
         self.create_subscription(
             RobotStatus, '/fleet/robot_status', self._status, 50)
 
@@ -62,7 +65,7 @@ def main() -> None:
     rclpy.init()
     node = WaitOnline()
     try:
-        wait(node)
+        wait(node)  # 결과와 상관없이 종료 코드 0
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:

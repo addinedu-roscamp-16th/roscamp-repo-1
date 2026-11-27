@@ -1,6 +1,7 @@
 {
   "label": "실측 지도 · test_map_v04",
   "map_yaml": "test_map_v04.yaml",
+  "dock_backwards": false,
   "homes": [
     "W1",
     "W2",
@@ -174,6 +175,22 @@
       "D2_STOP"
     ]
   ],
+  "stations": {
+    "places": {
+      "FRY_PICKUP": "D1_STOP",
+      "WOK_PICKUP": "D1_STOP"
+    },
+    "tables": {
+      "1": [
+        "B4"
+      ]
+    }
+  },
+  "docks": {
+    "D1_STOP": {
+      "yaw_deg": 90.0
+    }
+  },
   "waiting": [
     "W1",
     "W2",

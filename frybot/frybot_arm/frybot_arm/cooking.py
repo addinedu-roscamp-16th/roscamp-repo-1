@@ -21,6 +21,7 @@ def cooking_nodes(arm_ids: tuple[str, ...] = ARM_IDS,
                   # [수정 2026-11-18] P2: 노드 이름을 실행 파일과 같게
                   name='master_controller', output='screen',
                   parameters=[{'arm_ids': list(arm_ids)}])]
+    # 팔마다 /<arm_id>/arm_controller 노드(이름공간 = 팔 이름)
     for arm_id in arm_ids:
         nodes.append(Node(
             package='frybot_arm', executable='arm_controller',

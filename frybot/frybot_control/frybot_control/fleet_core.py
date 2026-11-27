@@ -7,18 +7,33 @@ Responsibilities
   * cooking cell coordinator         -> cook arms A/B, fryer, wok, hand-off slots (acquire-all-at-once, no deadlock)
 
 All side effects go through a FleetIO object; all inputs arrive via on_* methods and tick(now).
+관제(Task Manager) 핵심. ROS 와 무관해 task_manager_node(ROS)와
+mock_fleet·offline_bench(모의)가 같은 코드를 씀.
 """
 import math
 import random
 import time
 from dataclasses import dataclass, field
 
+# 프로젝트 내부: 기기 상태 코드, 지도, 경로 계획기·배정기 플러그인
 from . import device_state
 from .layout import Graph, MENU, SAFE_DIST
 from .planners import make_planner, PLANNERS, PlanRequest, ReservationTable, Step, INF, DEFAULT_PLANNER
 from .schedulers import make_scheduler, SCHEDULERS, DEFAULT_SCHEDULER
 
-AMR_TASKS = ('GUIDE', 'SERVE', 'COLLECT')
+AMR_TASKS = ('GUIDE', 'SERVE', 'COLLECT')  # AMR 이 맡는 임무(배정 대상)
+# [수정 2026-11-20] T-52: 같은 노드로 다시 세우는 이동 명령을 받는 최소 거리(m)
+# (Nav2 xy_goal_tolerance 1.5 cm 보다 크게 벗어났을 때)
+RESETTLE_MIN = 0.015
+# [수정 2026-11-20] T-49: 위치를 아직 모르는 로봇의 상태(위치를 쓰지 않음)
+UNLOCALIZED = ('LOCALIZING', 'NOT_LOCALIZED')
+# [수정 2026-11-20] T-47: 서빙 팔이 있어야 하는 임무(serving_robots 로 제한)
+ARM_TASKS = ('SERVE', 'COLLECT')
+# [수정 2026-11-20] T-47: 팔 없는 로봇에 매기는 배정 비용(초). 배정은 하지
+# 않으며, 최소 비용 배정이 다른 쌍을 고르도록 크게 둠
+NO_ARM_COST = 1.0e6
+# 임무 종류별 기본 우선순위(클수록 급함). submit_task 의 priority 가 0
+# 이면 이 값. 배정기와 정체 판단(_rank)이 씀
 PRIORITY = {'GUIDE': 3, 'SERVE': 3, 'COLLECT': 1}
 # [수정 2026-11-17] T-24: 우선순위를 뒤집힌 로봇이 되뒤집지 못하는 시간(초).
 # 뒤집은 로봇이 두 구간쯤 갈 시간(실기기 구간당 약 3.5초)
@@ -32,37 +47,54 @@ PLAN_FAIL_SUSPEND_SEC = 20.0
 
 
 class FleetIO:
-    """Outputs of the core. The ROS node and the offline simulator both implement this."""
+    """Outputs of the core. The ROS node and the offline simulator both implement this.
 
+    관제 코어의 출력. task_manager_node 와 mock_fleet 이 구현함.
+    """
+
+    # 로봇에 경로(NavigateRoute)를 보냄. mode: NORMAL/GUIDE/YIELD,
+    # steps: list[Step]. task_id 는 임무가 없으면 'RETURN'
     def send_route(self, robot_id, task_id, plan_version, mode, visit_id, steps): ...
+    # 통행 허가(TrafficGrant): 경로의 index 번째 노드까지 가도 됨
     def grant(self, robot_id, task_id, plan_version, index): ...
+    # 로봇의 경로 실행을 취소
     def cancel_route(self, robot_id): ...
+    # 팔 작업 취소(일시 중단·비상 정지 때 서빙 팔)
     def cancel_arm(self, arm_id): ...
+    # 팔 작업 요청. arm_id: 로봇 id(서빙 팔) 또는 cook_arm_a/b,
+    # duration: 예상 시간(초), params: params_json 으로 갈 dict
     def arm_job(self, arm_id, task_id, job, duration, params): ...
+    # [수정 2026-11-25] I/F 정의서 v0.2 이름: TaskEvent -> TaskProgress
+    # [수정 2026-11-26] I/F v0.3 최종 판 이름: TaskProgress -> TaskEvent
+    # 임무 상태 변화(TaskEvent)를 central_control 로
     def task_event(self, ev: dict): ...
+    # 실행 로그 한 줄(/frybot/event_log)
     def log(self, event, **fields): ...
 
 
 @dataclass
 class Task:
-    id: str
-    type: str
-    visit_id: int = 0
-    order_id: int = 0
-    item_id: int = 0
-    table_id: int = 0
-    menu: str = ''
-    priority: int = 1
-    created: float = 0.0
+    """AMR 또는 조리 셀이 수행하는 임무 하나(관제 내부 기록)."""
+
+    id: str  # 종류 첫 글자 + 일련번호(G0001, M0002 등)
+    type: str  # GUIDE, SERVE, COLLECT, COOK, MOVE
+    visit_id: int = 0  # 방문(손님 일행) id
+    order_id: int = 0  # 주문 id
+    item_id: int = 0  # 주문 항목 id
+    table_id: int = 0  # 테이블 번호
+    menu: str = ''  # MENU 의 키(SERVE·COOK)
+    priority: int = 1  # 클수록 급함
+    created: float = 0.0  # 접수 시각(관제 시계, 초)
     state: str = 'PENDING'          # PENDING IN_PROGRESS DONE SUSPENDED CANCELED
-    robot_id: str = ''
+    robot_id: str = ''  # 맡은 로봇('' = 미배정)
+    # 단계 목록: ('move', 지점, 모드), ('arm', 작업, 초), ('event', 이름)
     phases: list = field(default_factory=list)
-    pi: int = 0
-    carrying: bool = False
-    assigned_at: float = 0.0
-    finished_at: float = 0.0
-    reason: str = ''
-    start_node: str = ''
+    pi: int = 0  # 지금 수행할 phases 번호
+    carrying: bool = False  # 음식·식기를 싣고 있음
+    assigned_at: float = 0.0  # 마지막 배정 시각
+    finished_at: float = 0.0  # 완료 시각
+    reason: str = ''  # 보류·취소 이유
+    start_node: str = ''  # 첫 이동 지점 노드(배정 비용 기준)
     rebalanced: int = 0             # times the rolling-horizon scheduler moved it to another robot
     # [수정 2026-11-18] W2: State Diagram v4 의 LOADED -> SERVING. 적재 뒤
     # 테이블행 구간을 처음 나아갔을 때 SERVING 을 한 번만 내기 위한 표시
@@ -71,39 +103,42 @@ class Task:
 
 @dataclass
 class Robot:
-    id: str
-    home: str
-    node: str
-    speed: float = 0.08
-    heading: str = ''               # node we are driving to (locked), '' when standing on `node`
+    """관제가 보는 AMR 한 대의 상태(보고 값 + 경로·락·양보 상태)."""
+
+    id: str  # pinky1..N
+    home: str  # 출발 노드(충전대, roadmap.json homes)
+    node: str  # 마지막으로 도착한(서 있는) 노드
+    # 가고 있는(락 잡은) 노드. '' 면 node 위에 서 있음, == node 면 그
+    # 노드로 복귀(REJOIN) 중
+    heading: str = ''
     route: list = None              # list[Step]
-    idx: int = 0
-    granted: int = 0
-    plan_version: int = 0
-    mode: str = 'NORMAL'
-    goal: str = ''
+    idx: int = 0  # 마지막 도착 route 칸(-1: route[0] 으로 가는 중)
+    granted: int = 0  # 허가한 route 칸 번호
+    plan_version: int = 0  # 경로 번호(옛 피드백·허가 구분)
+    mode: str = 'NORMAL'  # 지금 경로의 모드(NORMAL/GUIDE/YIELD)
+    goal: str = ''  # 지금 경로의 목적 노드
     pending_goal: tuple = None      # (goal, mode, next_try)
-    task: Task = None
-    returning: bool = False
-    arm_busy: str = ''
-    arm_until: float = 0.0
-    estop: bool = False
-    battery: float = 100.0
-    charging: bool = False
-    x: float = 0.0
+    task: Task = None  # 수행 중인 임무
+    returning: bool = False  # 임무 없이 park 로 가는 중
+    arm_busy: str = ''  # 진행 중인 서빙 팔 작업('' = 없음)
+    arm_until: float = 0.0  # 팔 작업이 끝날 예상 시각
+    estop: bool = False  # 비상 정지 또는 일시 중단 중
+    battery: float = 100.0  # 보고된 배터리(0~100 으로 다룸)
+    charging: bool = False  # 충전 중 보고
+    x: float = 0.0  # 보고 위치(지도 좌표, m)
     y: float = 0.0
-    yaw: float = 0.0
+    yaw: float = 0.0  # 보고 방향(rad)
     # [수정 2026-11-18] P2: 실기기 RobotStatus.state 를 담으므로 이름을 고침
     # (예전 sim_state)
     reported_state: str = ''
-    wait_since: float = None
-    blocked_by: str = ''
-    last_replan: float = 0.0
-    held: set = field(default_factory=set)
-    dist: float = 0.0
-    online: bool = False
-    last_status: float = 0.0
-    needs_replan: bool = False
+    wait_since: float = None  # 허가를 기다리기 시작한 시각
+    blocked_by: str = ''  # 다음 노드를 막은 로봇
+    last_replan: float = 0.0  # 마지막 정체 처리 시각
+    held: set = field(default_factory=set)  # 락을 잡은 노드들
+    dist: float = 0.0  # 누적 주행 거리(m, 지표)
+    online: bool = False  # 상태 보고가 2초 안에 옴
+    last_status: float = 0.0  # 마지막 상태 보고 시각
+    needs_replan: bool = False  # 다음 tick 에서 다시 계획
     park: str = ''                  # where this robot waits when idle (charger or standby spot)
     yield_to: str = ''              # robot we stepped aside for; we resume only once it has passed
     yield_from: str = ''            # node we vacated for it
@@ -115,8 +150,8 @@ class Robot:
     avoid_node: str = ''            # node the robot could not reach: plan round it until avoid_until
     avoid_until: float = 0.0
     # [수정 2026-11-17] T-23: 같은 판단을 다시 기록하지 않기 위한 표시
-    wait_note: tuple = None
-    skip_note: tuple = None
+    wait_note: tuple = None  # 마지막 PLAN_WAIT 기록 키
+    skip_note: tuple = None  # 마지막 YIELD_SKIP 기록 키
     # [수정 2026-11-17] T-24: 이 시각까지는 우선순위를 뒤집지 못함
     # (방금 뒤집은 상대를 되뒤집어 서로 계획을 무효화하는 것 방지)
     no_flip_until: float = 0.0
@@ -126,6 +161,10 @@ class Robot:
     still_pos: tuple = None         # 서 있다고 본 기준 위치
     still_since: float = 0.0        # 그 위치에 머문 시작 시각
     home_retry: float = 0.0         # 이 시각 전에는 다시 시도하지 않음
+    # [수정 2026-11-20] T-45: 임무 뒤 홈 복귀를 이 시각 전에는 다시 시도 안 함
+    return_retry: float = 0.0
+    # [수정 2026-11-20] T-49: 위치를 모를 때 로봇이 보고한 상태('' = 아님)
+    localizing: str = ''
     home_note: str = ''             # 마지막으로 기록한 보류 이유
     # [수정 2026-11-17] UR-18: 관리자의 일시 중단(PAUSE). estop 과 함께 켜져
     # 로봇을 세우되, 화면에는 비상 정지가 아닌 "일시 중단"으로 표시
@@ -140,13 +179,20 @@ class Robot:
 
 
 class CookJob:
+    """조리 작업 하나의 진행 상태(레시피 공정을 차례로 수행).
+
+    Args:
+        task: COOK 임무.
+        ops: _recipe 가 만든 공정 목록.
+    """
+
     def __init__(self, task, ops):
-        self.task, self.ops, self.pc = task, ops, 0
+        self.task, self.ops, self.pc = task, ops, 0  # pc: 지금 할 ops 번호
         self.busy = False            # an arm job / timer is running
-        self.until = 0.0
-        self.retries = 0
-        self.wait_doneness_since = None
-        self.label = 'QUEUED'
+        self.until = 0.0  # 타이머 끝 시각(0 = 없음)
+        self.retries = 0  # 덜 익어 다시 튀긴 횟수
+        self.wait_doneness_since = None  # 익힘 판정 대기 시작
+        self.label = 'QUEUED'  # 화면용 공정 단계 이름
 
 
 # [수정 2026-11-18] W2: 공정 단계 이름을 State Diagram v4 의 조리 작업 상태로
@@ -172,6 +218,42 @@ def _cook_state(job: CookJob) -> str:
 
 
 class FleetCore:
+    """관제 코어: 임무 배정, 경로 계획, 통행 허가(교통 계층), 조리 셀 조율.
+
+    입력은 on_* 메서드와 tick(now), 출력은 io(FleetIO)로만 나감.
+
+    Args:
+        io: 출력 구현(FleetIO).
+        robot_ids: 관제할 AMR id 목록.
+        scheduler: 배정기 이름(SCHEDULERS).
+        planner: 경로 계획기 이름(PLANNERS).
+        speed: 일반 주행 속도(m/s).
+        guide_speed: 손님 안내 속도(m/s).
+        cook_time_scale: 조리 시간 축소 배율(시간 / 이 값).
+        stall_timeout: 허가를 이 시간(초) 넘게 못 받으면 정체 처리.
+        min_battery: 이보다 낮으면(%) 새 임무를 주지 않음.
+        handoff_slots: 음식 받는 곳 한 곳에 둘 수 있는 접시 수.
+        use_doneness: 튀긴 뒤 AI 익힘 판정을 기다림.
+        plan_speed_factor: 계획 속도 = 주행 속도 x 이 값.
+        use_standby: 임무 없는 로봇을 대기 위치에도 세움(가상 매장).
+        standby_min_battery: 이보다 낮으면(%) 대기 대신 충전대로.
+        prefer_yield: 먼 우회 대신 기다리거나 비켜 섬.
+        yield_detour_ratio: 먼 우회 기준(최단 거리의 배수).
+        yield_detour_min: 먼 우회 기준(최단 거리 + 이 값, m).
+        yield_max_wait: 기다리는 계획이 우회보다 늦어도 되는 시간(초).
+        route_retries: 주행 실패 뒤 자동 재계획 횟수.
+        off_node_dist: 노드에서 이 거리(m) 넘게 벗어나면 노드 밖.
+        rejoin_max_dist: 노드 복귀로 고를 노드의 최대 거리(m).
+        pv_base: 경로 번호 시작값(None 이면 시각 기반).
+        auto_home: 기동 후 출발 노드로 한 번 이동(실측 지도).
+        auto_home_settle: 자동 이동 전에 서 있어야 하는 시간(초).
+        offline_hold: 끊긴 로봇의 임무를 보류하기까지의 시간(초).
+        plan_overhead: 계획의 구간 지연(초).
+        rng_seed: 관제 난수 씨앗(None 이면 매번 다름).
+        serving_robots: 서빙 팔을 올린 로봇(비면 모든 로봇).
+        pos_block_dist: 서 있는 로봇 보고 위치의 점유 거리(m).
+    """
+
     def __init__(self, io: FleetIO, robot_ids=('pinky1', 'pinky2', 'pinky3'), scheduler=DEFAULT_SCHEDULER,
                  planner=DEFAULT_PLANNER, speed=0.08, guide_speed=0.05, cook_time_scale=20.0,
                  stall_timeout=3.0, min_battery=25.0, handoff_slots=3, use_doneness=True,
@@ -179,12 +261,23 @@ class FleetCore:
                  yield_detour_ratio=1.4, yield_detour_min=0.4, yield_max_wait=25.0, route_retries=2,
                  off_node_dist=0.06, rejoin_max_dist=1.0, pv_base=None,
                  auto_home=False, auto_home_settle=3.0, offline_hold=10.0,
-                 plan_overhead=0.0, rng_seed=None):
-        self.io = io
+                 plan_overhead=0.0, rng_seed=None, serving_robots=(),
+                 pos_block_dist=0.12):
+        self.io = io  # 출력: 경로·허가·팔 작업·로그
+        # [수정 2026-11-20] T-52: 서 있는 다른 로봇의 보고 위치에서 이 거리(m)
+        # 안의 노드는 허가·계획하지 않음. SAFE_DIST 0.155 에서 서 있을 때의
+        # 위치 추정 흔들림 여유 0.035(실기기 AMCL 흔들림 +-2~3 cm)를 뺀 값.
+        # W1-B1 15.7 cm 처럼 가까운 노드도 노드 위 +-3 cm 흔들림(12.7 cm)은
+        # 막지 않고, 09 의 5.9 cm 벗어남(B1 까지 9.9 cm)은 막음
+        self.pos_block_dist = pos_block_dist
+        # [수정 2026-11-20] T-47: 서빙 팔을 올린 로봇. 비면 모든 로봇이
+        # SERVE·COLLECT 를 받음(예전 동작, 시뮬·벤치)
+        self.serving_robots = set(serving_robots)
         # [수정 2026-11-17] A3: 로봇이 이 시간(초) 넘게 끊겨 있으면 진행 중인
         # 임무를 OFFLINE 으로 보류(관리자가 RETRY_TASK 로 재개)
         self.offline_hold = offline_hold
-        self.graph = Graph()
+        self.graph = Graph()  # 지도(map_id 는 FRYBOT_MAP_ID)
+        # 아래 값들은 생성자 인자 그대로(뜻은 클래스 docstring)
         self.speed, self.guide_speed = speed, guide_speed
         self.cook_scale = cook_time_scale
         self.stall_timeout = stall_timeout
@@ -198,6 +291,7 @@ class FleetCore:
         # [수정 2026-11-18] W8-1: 물러난 뒤 다시 시도하는 시각을 흩는 난수.
         # 전역 random 대신 관제 코어의 생성기(rng_seed=None 이면 매번 다름)
         self.rng = random.Random(rng_seed)
+        # 대기 위치 사용과 그 배터리 하한(가상 매장 _park_goal)
         self.use_standby, self.standby_min_battery = use_standby, standby_min_battery
         # Yielding: when the planner's answer to another robot on our path is a long way round (longer than
         # ratio x shortest and shortest + min metres), wait for it on the short path (at most yield_max_wait seconds
@@ -214,48 +308,70 @@ class FleetCore:
         # Plan versions never repeat across restarts of the Task Manager (a robot may still hold permissions of the
         # previous session): start from the clock, 1024 versions per second of wall time, below 2^30.
         self.pv_base = ((int(time.time()) & 0xFFFFF) << 10) if pv_base is None else pv_base
-        self.scheduler = make_scheduler(scheduler)
-        self.scheduler.core = self
-        self.planner = make_planner(planner)
-        self.robots = {}
+        self.scheduler = make_scheduler(scheduler)  # 배정기(SCHEDULERS)
+        self.scheduler.core = self  # rmf_task 배정기가 코어를 봄
+        self.planner = make_planner(planner)  # 경로 계획기(PLANNERS)
+        self.robots = {}  # 로봇 id -> Robot
         self.locks = {}                      # node -> robot id
         for rid in robot_ids:                 # any number of AMRs: the home spots come from the layout
             home = self.graph.home_of(rid)
-            r = Robot(rid, home, home, speed=speed, plan_version=self.pv_base)
+            r = Robot(rid, home, home, plan_version=self.pv_base)
             r.x, r.y = self.graph.nodes[home]
             r.park = home
+            # 가상 매장: 홈 노드에서 시작한다고 보고 락을 잡음. 실측 지도는
+            # 첫 IDLE 상태 보고 때 가까운 노드를 잡음(on_robot_status)
             if not self.graph.map_id:
                 r.held = {home}
                 self.locks[home] = rid
             self.robots[rid] = r
-        self.tasks = {}
-        self.seq = 0
+        self.tasks = {}  # 임무 id -> Task
+        self.seq = 0  # 임무 id 일련번호
         # cooking cell
-        self.cook_jobs = []
+        self.cook_jobs = []  # 진행 중인 CookJob
+        # 조리 자원 -> 잡은 COOK 임무 id(None = 비어 있음)
         self.res_owner = {'ARM_A': None, 'ARM_B': None, 'FRYER': None, 'WOK': None}
+        # 음식 받는 곳 -> 놓인 접시 수(SERVE 의 LOADED 때 줄어듦)
         self.slots = {'FRY_PICKUP': 0, 'WOK_PICKUP': 0}
-        self.slot_cap = handoff_slots
+        self.slot_cap = handoff_slots  # 받는 곳 한 곳의 최대 접시 수
         self.doneness = {}                   # cook task id -> (decision, stamp)
         # [수정 2026-11-17] UR-17, 19: 팔이 스스로 보고한 상태
         # (/fleet/arm_status). arm id -> dict(state, job, task_id, error, t)
         self.arm_reports = {}
         self.arm_fault_since = {}            # 조리 팔 id -> 이상 시작 시각
+        # 지표(벤치·화면 metrics): 허가 수, 락 대기·계획 대기 시간(초),
+        # 재계획·물러남·계획 실패·양보·재배정 횟수, 계획 시간(ms) 등
         self.m = dict(grants=0, blocked_wait=0.0, planned_wait=0.0, replans=0, retreats=0, plan_fail=0,
                       plan_calls=0, plan_ms=0.0, tasks_done=0, stalls=0, flips=0, joint_plans=0, joint_fail=0,
                       reassign=0, yields=0, rejoins=0, route_retries=0)
-        self.now = 0.0
+        self.now = 0.0  # 관제 시계(마지막 tick 의 now)
         # [수정 2026-11-17] T-23: 양보하지 않은 이유(기록용, 판단에는 쓰지 않음)
         self._yield_why = ''
-        self._last_tick = None
-        self._last_rebalance = 0.0
+        self._last_tick = None  # 지난 tick 시각(dt 계산)
+        self._last_rebalance = 0.0  # 마지막 재배정 비교 시각
 
     # ------------------------------------------------------------------ algorithms (hot swap)
     def set_scheduler(self, name):
+        """배정기를 실행 중에 바꾼다(관리자 SET_SCHEDULER).
+
+        Args:
+            name: SCHEDULERS 의 이름(옛 이름 hungarian* 도 받음).
+
+        Raises:
+            KeyError: 등록되지 않은 이름(make_scheduler).
+        """
         self.scheduler = make_scheduler(name)
         self.scheduler.core = self
         self.io.log('SET_SCHEDULER', result=name)
 
     def set_planner(self, name):
+        """경로 계획기를 바꾸고 진행 중인 경로를 새 계획기로 다시 계획한다.
+
+        Args:
+            name: PLANNERS 의 이름.
+
+        Raises:
+            KeyError: 등록되지 않은 이름(make_planner).
+        """
         self.planner = make_planner(name)
         self.io.log('SET_PLANNER', result=name)
         for r in self.robots.values():        # re-plan running routes with the new algorithm
@@ -263,9 +379,47 @@ class FleetCore:
                 self._start_move(r, r.goal, r.mode, replan=True)
 
     # ------------------------------------------------------------------ task intake
+    # [수정 2026-11-25] I/F 정의서 v0.2 이름: /fms/submit_task ->
+    # /frybot/tasks/submit
+    # [수정 2026-11-26] I/F v0.3 최종 판 이름(docstring):
+    # /frybot/tasks/submit -> /fms/submit_task
     def submit_task(self, type, visit_id=0, order_id=0, item_id=0, table_id=0, menu='', priority=0):
+        """새 임무를 접수한다(central_control 의 /fms/submit_task).
+
+        COOK 은 바로 조리 셀에 넣고, 나머지는 PENDING 으로 두어 tick 의
+        _schedule 이 배정한다.
+
+        Args:
+            type: GUIDE, SERVE, COLLECT, COOK.
+            visit_id: 방문 id.
+            order_id: 주문 id.
+            item_id: 주문 항목 id.
+            table_id: 테이블 번호.
+            menu: 메뉴 이름(SERVE·COOK).
+            priority: 우선순위. 0 이면 PRIORITY 의 기본값.
+
+        Returns:
+            새 임무 id.
+
+        Raises:
+            ValueError: 서빙 팔 로봇이 없거나, 지도에 필요한 지점이 없거나,
+                모르는 임무 종류·COOK 메뉴일 때.
+            KeyError: 가상 매장에서 모르는 메뉴의 SERVE.
+        """
+        # [수정 2026-11-20] 실측 지도에서 무조건 거절하던 것을, 그 임무에
+        # 필요한 지점이 지도(roadmap.json 의 stations)에 있으면 받도록 바꿈
+        # [수정 2026-11-20] T-47: 서빙 팔이 있는 로봇이 이 관제에 하나도
+        # 없으면 SERVE·COLLECT 를 받지 않음(있으면 그 로봇이 빌 때까지 대기)
+        if (type in ARM_TASKS and self.serving_robots
+                and not self.serving_robots & set(self.robots)):
+            raise ValueError(
+                f'no robot with a serving arm for {type}: serving_robots='
+                f'{sorted(self.serving_robots)}, robots={sorted(self.robots)}')
         if self.graph.map_id:
-            raise ValueError('Restaurant stations are not defined on this map')
+            missing = self._missing_stations(type, table_id, menu)
+            if missing:
+                raise ValueError('Restaurant stations are not defined on '
+                                 f'this map: {", ".join(missing)}')
         self.seq += 1
         t = Task(f'{type[0]}{self.seq:04d}', type, visit_id, order_id, item_id, table_id, menu,
                  priority or PRIORITY.get(type, 1), self.now)
@@ -279,7 +433,30 @@ class FleetCore:
         self.io.log('TASK_SUBMIT', task_id=t.id, visit_id=visit_id, order_id=order_id, result=type, reason=menu)
         return t.id
 
+    # [수정 2026-11-20] 신규: 실측 지도에서 임무를 받을 수 있는지 확인
+    def _missing_stations(self, type: str, table_id: int,
+                          menu: str) -> list[str]:
+        """이 지도에서 임무를 수행하는 데 빠진 것을 돌려준다.
+
+        Args:
+            type: 임무 종류(GUIDE, SERVE, COLLECT, COOK).
+            table_id: 테이블 번호.
+            menu: 메뉴 이름(SERVE 의 음식 받는 곳을 정함).
+
+        Returns:
+            지도에 없는 지점 이름의 목록. 모두 있으면 빈 목록. 조리 팔이
+            없는 실측 지도의 COOK, 모르는 메뉴의 SERVE 도 빠진 것으로 침.
+        """
+        if type == 'COOK':
+            return ['COOK']
+        if type == 'SERVE' and menu not in MENU:
+            return [f'menu {menu!r}']
+        probe = Task('', type, table_id=table_id, menu=menu)
+        return [ph[1] for ph in self._program(probe) if ph[0] == 'move'
+                and self.graph.resolve(ph[1]) not in self.graph.nodes]
+
     def _program(self, t):
+        """임무 종류별 단계 목록(phases)을 만든다(지점 이름 사용)."""
         tbl = f'T{t.table_id}:serve'                 # serving / collecting point(s) of the table
         if t.type == 'GUIDE':
             return [('move', 'ENTRANCE', 'NORMAL'), ('event', 'AT_START'), ('move', f'T{t.table_id}:guide', 'GUIDE'),
@@ -295,6 +472,13 @@ class FleetCore:
 
     # ------------------------------------------------------------------ main loop
     def tick(self, now):
+        """관제 한 주기(task_manager_node 는 0.1초마다 부름).
+
+        끊김 판정, 배정, 재계획, 통행 허가, 홈 복귀, 조리 셀을 처리한다.
+
+        Args:
+            now: 지금 시각(초). ROS 노드는 time.time(), 모의는 모의 시각.
+        """
         dt = 0.0 if self._last_tick is None else now - self._last_tick
         self._last_tick = self.now = now
         # [수정 2026-11-17] A3: 끊김 판정을 지도와 무관하게 함(전에는 실측
@@ -302,7 +486,9 @@ class FleetCore:
         # 로봇에는 새 허가·재계획·배정을 하지 않고, 오래 끊기면 임무를 보류.
         # 락은 시간으로 풀지 않음(로봇이 어디 있는지 모름)
         for robot in self.robots.values():
-            if robot.online and now - robot.last_status > 2.0:
+            # [수정 2026-11-24] 끊김 판정 2.0 → 1.0 s: 로봇의 fms_timeout
+            # (1.0 s)과 같은 기준으로 맞춤. 실기기 확인 필요
+            if robot.online and now - robot.last_status > 1.0:
                 robot.online, robot.offline_since = False, now
                 self.io.log('ROBOT_OFFLINE', robot_id=robot.id,
                             zone_id=robot.node, result='FAIL',
@@ -312,8 +498,10 @@ class FleetCore:
                     and now - robot.offline_since > self.offline_hold \
                     and task and task.state == 'IN_PROGRESS':
                 self._suspend(task, 'OFFLINE')
-        self._schedule()
+        self._schedule()  # 대기 임무 배정·재배정
         for r in self.robots.values():
+            # 재계획 요청: 보류 임무·양보 대기 중이 아니면 다시 계획하고,
+            # 실패하면 서 있는 로봇은 물러섬
             held_task = bool(r.task and r.task.state == 'SUSPENDED')
             if r.needs_replan and r.online and not held_task \
                     and not (r.pending_goal and not r.route and not self._yield_done(r)):
@@ -325,22 +513,45 @@ class FleetCore:
                     if not self._start_move(r, g, mode, replan=True, allow_flip=False) and standing \
                             and (r.task or not self.graph.map_id):
                         self._retreat(r, None, goal=g, mode=mode)
-            self._drive(r, dt)
+            self._drive(r, dt)  # 통행 허가(교통 계층)
+            # 가상 매장: 임무 없이 서 있는 로봇은 충전대·대기 위치로
             if not self.graph.map_id and r.online and r.task is None and not r.route and not r.pending_goal and not r.estop and not r.heading:
-                if r.node != r.home and r.battery < self.standby_min_battery:
+                # [수정 2026-11-27] T-65: 하한(min_battery)이 대기 기준
+                # (standby_min_battery)보다 높게 설정돼도 하한 미만이면 홈으로
+                if r.node != r.home and r.battery < max(
+                        self.standby_min_battery, self.min_battery):
                     self._go_home(r, force_home=True)          # standby robot running low: go and charge
                 elif r.node != r.park and not r.arm_busy:
                     self._go_home(r)                           # left somewhere (e.g. after stepping aside): go and park
+            # [수정 2026-11-27] T-65: 실측 지도: 임무·경로·대기 이동 없이
+            # 홈 밖에 선 로봇이 배터리 하한(min_battery) 미만이면 스스로
+            # 홈(충전소)으로. 막히면 아래 T-45 재시도가 3초마다 다시 보냄
+            if (self.graph.map_id and r.online and r.task is None
+                    and not r.route and not r.pending_goal and not r.estop
+                    and not r.heading and not r.arm_busy
+                    and not r.returning and r.reported_state == 'IDLE'
+                    and r.node != r.home
+                    and r.battery < self.min_battery):
+                self._return_home(
+                    r, reason=f'low_battery={r.battery:.1f}%')
+            # [수정 2026-11-20] T-45: 실측 지도 홈 복귀가 막혔으면 다시 시도
+            if (self.graph.map_id and r.returning and r.online
+                    and r.task is None and not r.route
+                    and not r.pending_goal and not r.estop and not r.heading
+                    and r.node != r.park and now >= r.return_retry):
+                r.return_retry = now + 3.0
+                self._start_move(r, r.park, 'NORMAL')
             # [수정 2026-11-17] 실측 지도: 기동 후 출발 노드로 자동 이동
             self._auto_home(r)
             # [수정 2026-11-17] UR-19: 이상이 시작된 시각 기록
             self._note_faults(r)
-        self._cook_tick()
+        self._cook_tick()  # 조리 셀 진행
 
     # ------------------------------------------------------------------ scheduling
     # [수정 2026-11-17] G2: 로봇이나 서빙 팔이 오류를 보고 중이면 새 임무를
     # 주지 않음(전에는 DRIVE_ERROR 가 있어도 안내·서빙을 배정했음)
     def _available(self, r):
+        """새 임무를 자동 배정할 수 있는 로봇인지."""
         return (r.online and not r.estop and r.task is None and not r.arm_busy and r.battery >= self.min_battery
                 and not self._fault(r))
 
@@ -360,13 +571,56 @@ class FleetCore:
     # [수정 2026-11-17] 신규 (G2): 관리자의 이동 명령은 자동 배정과 조건을
     # 나눔. 주행 실패(DRIVE_ERROR)는 다음 구간을 성공해야 풀리므로, 관리자가
     # 노드로 되돌리는 이동은 받음. 통신·위치·팔 오류는 받지 않음
-    def _movable(self, r: Robot) -> bool:
-        """관리자의 이동·홈 복귀 명령을 받을 수 있는 로봇인지."""
+    # [수정 2026-11-27] T-65: 목적지(dest)가 자기 홈이면 배터리 하한 아래여도
+    # 받음(홈 = 충전소). 다른 노드로 가는 이동은 그대로 거절
+    def _movable(self, r: Robot, dest: str = '') -> bool:
+        """관리자의 이동·홈 복귀 명령을 받을 수 있는 로봇인지.
+
+        Args:
+            r: 로봇.
+            dest: 목적 노드('' 이면 홈이 아닌 이동으로 봄).
+
+        Returns:
+            받을 수 있으면 True.
+        """
         arm = self.arm_reports.get(r.id)
         return (r.online and not r.estop and r.task is None
-                and not r.arm_busy and r.battery >= self.min_battery
+                and not r.arm_busy
+                and (r.battery >= self.min_battery or dest == r.home)
                 and r.error in ('', 'DRIVE_ERROR')
                 and not (arm and arm['error']))
+
+    # [수정 2026-11-20] T-52: 신규. 이동 명령을 받을 수 없는 이유
+    # [수정 2026-11-27] T-65: dest 인자. 홈으로 가는 이동은 배터리 하한으로
+    # 거절하지 않고, 거절 문구에 홈 복귀는 된다고 적음
+    def _unmovable_reason(self, r: Robot, dest: str = '') -> str:
+        """관리자 이동 명령을 받을 수 없는 첫 번째 이유('' = 받을 수 있음).
+
+        Args:
+            r: 로봇.
+            dest: 목적 노드('' 이면 홈이 아닌 이동으로 봄).
+
+        Returns:
+            사람이 읽을 이유 문자열.
+        """
+        arm = self.arm_reports.get(r.id)
+        checks = (
+            (not r.online, '관제와 연결 끊김(상태 보고 2초 넘게 없음)'),
+            (r.estop, '비상 정지 중(RESUME 필요)'),
+            (r.task is not None,
+             f'임무 {r.task.id if r.task else ""} 수행 중'),
+            (bool(r.arm_busy), f'팔 작업 {r.arm_busy} 중'),
+            (r.battery < self.min_battery and dest != r.home,
+             f'배터리 {r.battery:.0f}% < {self.min_battery:.0f}%'
+             f'(홈 {r.home} 복귀 GO_HOME 은 가능)'),
+            (r.error not in ('', 'DRIVE_ERROR'), f'로봇 오류 {r.error}'),
+            (bool(arm and arm['error']),
+             f'서빙 팔 오류 {arm["error"] if arm else ""}'),
+            (bool(r.route), '경로 실행 중'),
+            (bool(r.pending_goal), '비켜 준 뒤 복귀 대기 중'),
+            (r.reported_state != 'IDLE',
+             f'로봇 보고 상태 {r.reported_state or "(없음)"}'))
+        return next((text for bad, text in checks if bad), '')
 
     def _cost_fn(self):
         """Seconds until a robot can be at the task's first stop. ETA schedulers ask the path planner, so waiting for
@@ -374,6 +628,7 @@ class FleetCore:
         cache = {}
 
         def static(r, t):
+            """그래프 최단 거리 기준 이동 시간(초, 구간 지연 포함)."""
             src = r.heading or r.node
             cost = self.graph.shortest_dist(src, t.start_node) / self.speed
             # [수정 2026-11-18] W6: 최단 경로의 구간 수 x 구간 지연
@@ -383,6 +638,10 @@ class FleetCore:
             return cost
 
         def eta(r, t):
+            """계획기의 도착 예상 시간(초). (로봇, 지점)별로 한 번만 계산.
+
+            조율 계획기가 아니면 static, 계획에 실패하면 static 의 3배.
+            """
             k = (r.id, t.start_node)
             if k not in cache:
                 # [수정 2026-11-18] W6: 구간 지연(overhead) 추가
@@ -392,9 +651,30 @@ class FleetCore:
                 cache[k] = (steps[-1].arrive - self.now) if steps else static(r, t) * (1.0 if steps is None and not
                                                                                      self.planner.coordinated else 3.0)
             return cache[k]
-        return eta if self.scheduler.uses_eta else static
+        fn = eta if self.scheduler.uses_eta else static  # ETA 배정기면 eta
+        # [수정 2026-11-20] T-47: 팔 없는 로봇의 SERVE·COLLECT 는 큰 비용
+        if not self.serving_robots:
+            return fn
+        return lambda r, t: fn(r, t) + (0.0 if self._can_take(r, t)
+                                        else NO_ARM_COST)
+
+    # [수정 2026-11-20] T-47: 신규
+    def _can_take(self, r: Robot, t: Task) -> bool:
+        """로봇 r 이 임무 t 를 맡을 수 있는지(서빙 팔 조건)를 돌려준다.
+
+        Args:
+            r: 로봇.
+            t: 임무.
+
+        Returns:
+            serving_robots 가 비었거나, 팔이 필요 없는 임무이거나, r 이
+            serving_robots 에 있으면 True.
+        """
+        return (not self.serving_robots or t.type not in ARM_TASKS
+                or r.id in self.serving_robots)
 
     def _assign(self, t, r):
+        """임무 t 를 로봇 r 에 배정하고 첫 단계를 시작한다."""
         t.robot_id, t.state, t.assigned_at, t.pi = r.id, 'IN_PROGRESS', self.now, 0
         r.task, r.returning = t, False
         self.io.log('TASK_ASSIGN', task_id=t.id, robot_id=r.id, visit_id=t.visit_id, order_id=t.order_id,
@@ -403,6 +683,12 @@ class FleetCore:
         self._run_phase(r)
 
     def _schedule(self):
+        """대기 임무를 빈 로봇에 배정한다.
+
+        롤링 호라이즌 배정기(rebalance)면 아직 첫 지점에 닿지 않은 임무를
+        주기마다 다시 비교해, 비용 합이 rebalance_gain 넘게 줄면 다른
+        로봇으로 넘긴다.
+        """
         pend = [t for t in self.tasks.values() if t.state == 'PENDING' and t.type in AMR_TASKS]
         free = [r for r in self.robots.values() if self._available(r)]
         cost = self._cost_fn()
@@ -423,10 +709,14 @@ class FleetCore:
                 # a robot that is released again plans from where it is now
                 pairs = self.scheduler.assign(pend + open_, robots, cost, self.now)
                 new = {t.id: r for t, r in pairs}
+                # 비교한 임무가 모두 다시 짝지어졌을 때만 비용 감소(gain)를 봄
                 if all(t.id in new for t in open_):
                     gain = sum(cost(self.robots[t.robot_id], t) - cost(new[t.id], t) for t in open_)
                     moved = [t for t in open_ if new[t.id].id != t.robot_id]
-                    if moved and gain > self.scheduler.rebalance_gain:
+                    # [수정 2026-11-20] T-47: 팔 없는 로봇으로는 넘기지 않음
+                    if (moved and gain > self.scheduler.rebalance_gain
+                            and all(self._can_take(new[t.id], t)
+                                    for t in moved)):
                         for t in moved:
                             old = self.robots[t.robot_id]
                             old.task = None
@@ -444,13 +734,22 @@ class FleetCore:
                         pend = [t for t in self.tasks.values() if t.state == 'PENDING' and t.type in AMR_TASKS]
                         free = [r for r in self.robots.values() if self._available(r)]
                         cost = self._cost_fn()
+        # 남은 대기 임무를 빈 로봇에 배정
         if not pend or not free:
             return
         for t, r in self.scheduler.assign(pend, free, cost, self.now):
-            self._assign(t, r)
+            # [수정 2026-11-20] T-47: 팔 없는 로봇과 짝지어진 임무는 대기
+            if self._can_take(r, t):
+                self._assign(t, r)
 
     # ------------------------------------------------------------------ task programs
     def _run_phase(self, r):
+        """로봇 r 의 임무를 진행할 수 있는 데까지 진행한다.
+
+        event 단계는 바로 처리하고, move 는 경로를 계획한 뒤, arm 은 팔
+        작업을 보낸 뒤 돌아온다(끝나면 _arrived·on_arm_result 가 다시
+        부름). 단계를 모두 마치면 임무를 DONE 으로 하고 복귀시킨다.
+        """
         t = r.task
         while t and t.state == 'IN_PROGRESS':
             if t.pi >= len(t.phases):
@@ -460,12 +759,19 @@ class FleetCore:
                 self.io.log('TASK_DONE', task_id=t.id, robot_id=r.id, visit_id=t.visit_id, order_id=t.order_id,
                             result='OK', reason=f'dur={t.finished_at - t.created:.1f}')
                 r.task = None
-                self._go_home(r)
+                # [수정 2026-11-20] T-45: 실측 지도에서도 임무를 마치면 자기 홈
+                # (roadmap.json homes)으로 돌아감. 관리자 이동 명령(MOVE)은 그
+                # 자리에 남음. 가상 매장은 그대로 _go_home
+                if self.graph.map_id and t.type != 'MOVE':
+                    self._return_home(r, t.id)
+                else:
+                    self._go_home(r)
                 return
             ph = t.phases[t.pi]
-            if ph[0] == 'event':
+            if ph[0] == 'event':  # 상태 이벤트: 화물 표시 갱신
                 if ph[1] == 'LOADED':
                     t.carrying = True
+                    # 받는 곳에서 접시를 집음: 그곳의 접시 수를 줄임
                     self.slots[MENU[t.menu]['pickup']] = max(0, self.slots[MENU[t.menu]['pickup']] - 1)
                 if ph[1] in ('DELIVERED', 'RETURNED'):
                     t.carrying = False
@@ -474,7 +780,7 @@ class FleetCore:
                 self._event(t, ph[1])
                 t.pi += 1
                 continue
-            if ph[0] == 'move':
+            if ph[0] == 'move':  # 이동: 목적 노드까지 계획
                 if len(self.graph.table_nodes.get(ph[1], ())) > 1:      # table reachable from several sides
                     ph = t.phases[t.pi] = ('move', self._table_side(r, ph[1]), ph[2])
                 goal = self.graph.resolve(ph[1])
@@ -501,6 +807,7 @@ class FleetCore:
         penalty when another robot stands on it / is heading for it. The choice is kept for the rest of the move."""
         src = r.heading or r.node
 
+        # 노드 n 의 비용: 최단 거리(m) + 다른 로봇이 서 있거나 향하면 0.6
         def cost(n):
             busy = any(o.id != r.id and (o.goal == n and (o.route or o.pending_goal) or o.node == n)
                        for o in self.robots.values())
@@ -574,7 +881,38 @@ class FleetCore:
             self.io.log('AUTO_HOME', robot_id=r.id, zone_id=r.home,
                         result='WAIT', reason=message)
 
+    # [수정 2026-11-20] T-45: 신규
+    # [수정 2026-11-27] T-65: reason 인자(배터리 하한 자동 복귀 기록)
+    def _return_home(self, r: Robot, task_id: str = '',
+                     reason: str = '') -> None:
+        """실측 지도: 임무를 마친 로봇을 자기 홈 노드로 보낸다.
+
+        가상 매장의 _go_home 처럼 임무 없이 복귀(returning)하므로, 복귀 중에도
+        새 임무를 받으면 그 임무로 바뀐다(_assign). 길이 막혀 계획이 안 되면
+        tick 이 3초마다 다시 시도한다.
+
+        Args:
+            r: 임무를 마친 로봇.
+            task_id: 방금 마친 임무(기록용).
+            reason: 기록용 사유(예: low_battery=22%). 임무 뒤 복귀는 ''.
+        """
+        if r.estop or (r.node == r.home and not r.heading):
+            return
+        r.park, r.returning = r.home, True
+        r.return_retry = self.now + 3.0
+        self.io.log('RETURN_HOME', robot_id=r.id, task_id=task_id,
+                    zone_id=r.home, reason=reason)
+        self._start_move(r, r.home, 'NORMAL')
+
     def _go_home(self, r, force_home=False):
+        """가상 매장: 임무 없는 로봇을 대기 자리(_park_goal)로 보낸다.
+
+        실측 지도에서는 아무것도 하지 않음(임무 뒤 복귀는 _return_home).
+
+        Args:
+            r: 로봇.
+            force_home: 대기 위치 대신 자기 홈(충전대)으로.
+        """
         if self.graph.map_id:
             return
         goal = self._park_goal(r, force_home)
@@ -584,7 +922,11 @@ class FleetCore:
         r.returning = True
         self._start_move(r, goal, 'NORMAL')
 
+    # [수정 2026-11-25] I/F 정의서 v0.2 이름: TaskEvent -> TaskProgress
+    # [수정 2026-11-26] I/F v0.3 최종 판 이름(docstring):
+    # TaskProgress -> TaskEvent
     def _event(self, t, state, reason=''):
+        """임무 상태 이벤트(TaskEvent)를 낸다. reason 이 비면 t.reason."""
         self.io.task_event(dict(task_id=t.id, task_type=t.type, state=state, robot_id=t.robot_id, visit_id=t.visit_id,
                                 order_id=t.order_id, item_id=t.item_id, table_id=t.table_id,
                                 plan_version=self.robots[t.robot_id].plan_version if t.robot_id in self.robots else 0,
@@ -598,10 +940,13 @@ class FleetCore:
         for o in self.robots.values():
             if o.id == me.id or o.id in exclude:
                 continue
+            # 낙관: 움직이는 로봇은 지금 잡은 노드만 5초 점유로 봄
             if optimistic and (o.route or o.pending_goal) and not o.estop:
                 for n in o.held:
                     tb.add(n, self.now, self.now + 5.0, o.id)
                     tb.itineraries.append([(n, self.now), (n, self.now + 5.0)])
+            # 시각이 있는 계획: 남은 계획 + 지금 점유(1.5초) + 이동 궤적
+            # (itineraries, 궤적 기반 계획기용)
             elif o.route and self.planner.coordinated and o.route[0].arrive > 0:
                 rem = o.route[max(o.idx, 0):]
                 hold = self._hold_estimate(o, at_goal=True)
@@ -614,14 +959,30 @@ class FleetCore:
                         pts.append((st.node, st.arrive))
                     pts.append((st.node, st.depart if i + 1 < len(rem) else st.arrive + hold))
                 tb.itineraries.append(pts)
+            # 그 밖: 잡은 노드를 머무는 예상 시간만큼 점유
             else:
                 hold = self._hold_estimate(o)
                 for n in o.held:
                     tb.add(n, self.now, self.now + hold, o.id)
                     tb.itineraries.append([(n, self.now), (n, self.now + hold)])
+            # [수정 2026-11-20] T-48·T-52: 노드에서 벗어나 서 있는 로봇은 보고
+            # 위치에서 pos_block_dist(기본 0.12 m) 안의 노드도 점유(서 있는
+            # 동안). 계획이 그 노드를 지나게 세우면 허가 단계에서 막혀 정체가
+            # 되므로 미리 피함
+            if self._stray(o):
+                hold = self._hold_estimate(o) if not o.route else 1.5
+                for n, xy in self.graph.nodes.items():
+                    # [수정 2026-11-20] T-52: 허가와 같은 거리 기준
+                    if math.dist(xy, (o.x, o.y)) < self.pos_block_dist:
+                        tb.add(n, self.now, self.now + hold, o.id)
         return tb
 
     def _hold_estimate(self, o, at_goal=False):
+        """로봇 o 가 지금 자리(at_goal 이면 목적지 도착 뒤)에 머물 시간(초).
+
+        INF 는 계속 머묾(비상 정지, 주차, 복귀, MOVE 의 마지막 이동).
+        다음 단계가 팔 작업이면 그 시간 + 2초.
+        """
         if o.estop:
             return INF
         if at_goal:
@@ -643,6 +1004,23 @@ class FleetCore:
         return 4.0
 
     def _start_move(self, r, goal, mode, replan=False, blocked=frozenset(), allow_flip=True):
+        """로봇 r 의 goal 까지 경로를 계획해 채택한다.
+
+        순서: 함께 계획(CCBS) -> 방금 못 간 노드 피하기 -> 기본 계획 ->
+        길을 막은 유휴 로봇 비키기 -> 우회 대신 양보 -> 우선순위 뒤집기.
+        실패하면 pending_goal 로 1초 뒤 다시 시도한다.
+
+        Args:
+            r: 로봇.
+            goal: 목적 지점(노드 또는 지점 이름).
+            mode: NORMAL, GUIDE, YIELD.
+            replan: 진행 중 경로의 재계획(기록 REPLAN, _adopt 참고).
+            blocked: 계획에서 뺄 노드(조율하지 않는 재계획).
+            allow_flip: 함께 계획·우선순위 뒤집기 허용.
+
+        Returns:
+            경로를 채택했거나 비켜 서기를 시작했으면 True.
+        """
         goal = self.graph.resolve(goal)
         self._rejoin(r)
         r.yield_note = ''
@@ -660,11 +1038,13 @@ class FleetCore:
         if r.heading and r.heading == r.node:        # driving back onto the roadmap from somewhere off it
             back = math.dist((r.x, r.y), self.graph.nodes[r.node])
             t0 += ov + back / speed
+        # 목적지 도착 뒤 점유: park 로 복귀면 계속, 아니면 5초
         hold = INF if (r.returning and goal == r.park) else 5.0
         req = PlanRequest(r.id, start, goal, t0, speed, goal_hold=hold,
                           blocked=blocked, overhead=ov)
-        c0 = time.perf_counter()
+        c0 = time.perf_counter()  # 계획 시간(plan_ms) 측정
         steps = None
+        # 함께 계획하는 계획기(CCBS): 움직이는 다른 로봇과 함께 계획
         if self.planner.joint and allow_flip and not blocked:
             steps = self._plan_joint(r, req, goal, mode)
         if steps is None and not blocked and r.avoid_node and self.now < r.avoid_until \
@@ -672,16 +1052,19 @@ class FleetCore:
             # the robot just failed to reach this node (obstacle, Nav2 gave up): look for a way round it first
             steps = self.planner.plan(self.graph, PlanRequest(r.id, start, goal, t0, speed, goal_hold=hold,
                                                               blocked=frozenset({r.avoid_node})), self._table(r))
+        # 기본: 다른 로봇의 예약을 피해 계획
         if steps is None:
             steps = self.planner.plan(self.graph, req, self._table(r))
         # [수정 2026-11-17] T-26: 비켜 준 뒤 원래 노드로 돌아가는 로봇(실측
         # 지도에서 임무 없이 움직이는 로봇)은 다른 로봇을 비키게 하거나
         # 우선순위를 뒤집지 않음. 그러면 서로 끝없이 자리를 바꿈
         quiet = bool(self.graph.map_id) and r.task is None and mode != 'YIELD'
+        # 먼 우회이거나 계획이 없으면 길을 막은 유휴 로봇을 비키고 다시 계획
         if self.prefer_yield and self.planner.coordinated and not blocked and mode != 'YIELD' and not quiet \
                 and (steps is None or self._long_way(steps, start, goal)) and self._make_way(r, start, goal):
             # an idle robot stood in the way and is stepping aside now: plan again, the short way is opening up
             steps = self.planner.plan(self.graph, req, self._table(r)) or steps
+        # 우회 대신 기다리거나 물러서기(_yield_instead)
         if steps is not None and self.prefer_yield and self.planner.coordinated and not self.planner.joint \
                 and not blocked and not r.heading and mode != 'YIELD' and not quiet:
             alt = self._yield_instead(r, req, steps, goal, mode)
@@ -706,7 +1089,7 @@ class FleetCore:
         self.m['plan_calls'] += 1
         self.m['plan_ms'] += (time.perf_counter() - c0) * 1000.0
         r.goal, r.mode = goal, mode
-        if steps is None and quiet:
+        if steps is None and quiet:  # 임무 없는 복귀가 막힘
             if r.heading and r.route:
                 # 구간을 달리는 중: 허가받은 노드까지만 가서 다시 판단함.
                 # 구간 중간에 서면 다른 로봇이 비켜 달라고 할 수 없음
@@ -720,7 +1103,7 @@ class FleetCore:
                         reason=f'no_way_back at={r.node}')
             self._stop_route(r)
             return False
-        if steps is None:
+        if steps is None:  # 계획 실패: 1초 뒤 다시 시도
             self.m['plan_fail'] += 1
             r.pending_goal = (goal, mode, self.now + 1.0)
             self.io.log('PLAN_FAIL', robot_id=r.id, task_id=r.task.id if r.task else '', zone_id=goal,
@@ -792,9 +1175,8 @@ class FleetCore:
                                f'next={steps[i + 1].node} '
                                f'total={sum(w for _, w in waits):.1f}s')
         short = self.graph.shortest_dist(start, goal)
-        length = sum(self.graph.dist(a.node, b.node)
-                     for a, b in zip(steps, steps[1:], strict=False)
-                     if a.node != b.node)
+        # [수정 2026-11-20] D-05: 경로 길이 합을 _plan_length 하나로 모음
+        length = self._plan_length(steps)
         if length <= short + 0.05:
             return
         limit = max(short * self.yield_detour_ratio,
@@ -839,6 +1221,7 @@ class FleetCore:
         elif math.dist(pos, self.graph.nodes[r.node]) <= self.off_node_dist:
             return False
 
+        # 피할 노드가 아니고 다른 로봇이 막지 않은 노드만 남김
         def free(nodes):
             return [n for n in nodes if n not in avoid and self._blocker(n, r.id) is None]
         cands = free(pool) if pool else []
@@ -864,16 +1247,25 @@ class FleetCore:
 
     # ------------------------------------------------------------------ yielding instead of a long way round
     def _shortest_path(self, a, b):
+        """빈 로드맵에서 a 부터 b 까지의 최단 경로 노드 목록(점유 무시)."""
         h = self.graph.sp_from(b)
         path = [a]
         while path[-1] != b and path[-1] in h and len(path) <= len(self.graph.nodes):
             path.append(min(self.graph.adj[path[-1]], key=lambda e: e[1] + h.get(e[0], 1e18))[0])
         return path
 
+    # [수정 2026-11-20] D-05: 같은 계산이 세 곳에 있어 한 메서드로 모음
+    def _plan_length(self, steps):
+        """경로의 통로 길이 합(m). 같은 노드에 머무는 대기 스텝은 0."""
+        return sum(self.graph.dist(a.node, b.node)
+                   for a, b in zip(steps, steps[1:], strict=False)
+                   if a.node != b.node)
+
     def _long_way(self, steps, start, goal):
         """True when the plan is a long way round compared with the shortest path on the empty roadmap."""
         short = self.graph.shortest_dist(start, goal)
-        length = sum(self.graph.dist(a.node, b.node) for a, b in zip(steps, steps[1:]) if a.node != b.node)
+        # [수정 2026-11-20] D-05: 경로 길이 합을 _plan_length 하나로 모음
+        length = self._plan_length(steps)
         return length > max(short * self.yield_detour_ratio, short + self.yield_detour_min)
 
     def _make_way(self, r, start, goal):
@@ -916,6 +1308,8 @@ class FleetCore:
         Returns:
             비키기 시작한 로봇이 있으면 True.
         """
+        # 비킬 수 있는 유휴 로봇: 연결됨, 정지·임무·경로·팔 작업·주행 없음,
+        # 마지막으로 비킨 뒤 10초 지남
         def idle(q: Robot) -> bool:
             return bool(q.online and not (
                 q.estop or q.task or q.route or q.pending_goal or q.arm_busy
@@ -940,10 +1334,12 @@ class FleetCore:
                 break
         if exit_node is None:
             return False
+        # 출구까지의 길과 그에 너무 가까운 노드(비워야 할 곳)
         need, n = set(), exit_node
         while n is not None:
             need |= {n} | self.graph.conflict[n]
             n = prev[n]
+        # 그 길 위 노드의 락을 잡은 유휴 로봇을 비키게 함
         moved = False
         for q in self.robots.values():
             if q.id in (o.id, r.id) or not idle(q) or not q.held & need:
@@ -977,7 +1373,8 @@ class FleetCore:
         if not self._long_way(steps, req.start, goal):
             return None
         short = self.graph.shortest_dist(req.start, goal)
-        length = sum(self.graph.dist(a.node, b.node) for a, b in zip(steps, steps[1:]) if a.node != b.node)
+        # [수정 2026-11-20] D-05: 경로 길이 합을 _plan_length 하나로 모음
+        length = self._plan_length(steps)
         path = self._shortest_path(req.start, goal)
         o = self._in_the_way(r, path)
         # [수정 2026-11-17] T-23: 양보하지 않는 이유를 남김(기록용)
@@ -1018,6 +1415,7 @@ class FleetCore:
         return {g} | self.graph.conflict[g]
 
     def _reachable(self, src, dst, closed):
+        """closed 노드를 지나지 않고 src 에서 dst 로 갈 수 있는지."""
         seen, todo = {src}, [src]
         while todo:
             u = todo.pop()
@@ -1030,6 +1428,11 @@ class FleetCore:
         return False
 
     def _adopt(self, r, steps, goal, mode, replan=False):
+        """계획 steps 를 로봇 r 의 경로로 채택하고 로봇에 보낸다.
+
+        출발 = 목적지면 바로 도착 처리하고, 구간 중간 재계획에서 지나는
+        노드가 같으면 경로를 다시 보내지 않고 시각만 고친다.
+        """
         same_kind = r.goal == goal and r.mode == mode
         r.goal, r.mode, r.pending_goal = goal, mode, None
         if len(steps) == 1 and not r.heading and steps[0].node == r.node:
@@ -1058,6 +1461,7 @@ class FleetCore:
                     reason=f'len={len(steps)} eta={steps[-1].arrive - self.now:.1f}' if steps[-1].arrive else f'len={len(steps)}')
 
     def _request(self, o, goal, mode):
+        """다른 로봇 o 의 계획 요청(함께 계획용, _start_move 와 같은 식)."""
         speed = (self.guide_speed if mode == 'GUIDE' else self.speed) * self.plan_speed_factor
         # [수정 2026-11-18] W6: 구간 지연 포함(_start_move 와 같은 식)
         ov = self.plan_overhead
@@ -1090,22 +1494,36 @@ class FleetCore:
         return plans[r.id]
 
     def _stop_route(self, r):
+        """로봇의 경로를 취소하고 관제 쪽 경로를 지운다(락은 그대로)."""
         self.io.cancel_route(r.id)
         r.route = None
 
     # ------------------------------------------------------------------ traffic layer
     def _drive(self, r, dt):
+        """교통 계층: 로봇 r 의 다음 노드 허가를 판단한다(tick 마다).
+
+        계획의 출발 시각 전이면 기다리고, 늦었으면 남은 계획을 미룬다. 다음
+        노드(와 너무 가까운 노드)가 비면 락을 잡고 허가를 내고, 막혀서
+        stall_timeout 넘게 기다리면 _resolve_stall 로 넘긴다.
+
+        Args:
+            r: 로봇.
+            dt: 지난 tick 부터의 시간(초, 대기 지표용).
+        """
         # [수정 2026-11-17] A3: 끊긴 로봇과 보류된 임무의 로봇에는 새 허가를
         # 내지 않고 보류한 이동도 시작하지 않음. 이미 낸 허가와 락은 그대로
         if r.estop or not r.online or (r.task and r.task.state == 'SUSPENDED'):
             return
+        # 다시 시도할 시각이 됐고 양보 상대가 지나갔으면 원래 목적지로
         if r.pending_goal and self.now >= r.pending_goal[2] and self._yield_done(r):
             g, mode, _ = r.pending_goal
             self._start_move(r, g, mode, replan=True)
+        # 경로 없음, route[0] 으로 가는 중, 허가한 구간을 주행 중이면 할 일 없음
         if not r.route or r.idx < 0 or r.idx != r.granted:
             return
-        if r.idx >= len(r.route) - 1:
+        if r.idx >= len(r.route) - 1:  # 마지막 노드: 허가할 구간 없음
             return
+        # 시각이 있는 계획: 출발 시각 전에는 허가하지 않음
         timed = self.planner.coordinated and r.route[0].arrive > 0
         cur = r.route[r.idx]
         if timed:
@@ -1117,6 +1535,7 @@ class FleetCore:
                 for s in r.route[r.idx:]:
                     s.arrive += late if s is not cur else 0.0
                     s.depart += late
+        # 다음 노드가 비었으면 락을 잡고 허가
         nxt = r.route[r.idx + 1].node
         owner = self._blocker(nxt, r.id)
         if owner is None:
@@ -1133,7 +1552,13 @@ class FleetCore:
         # blocked by another robot's lock
         if r.wait_since is None:
             r.wait_since, r.blocked_by = self.now, owner
-            self.io.log('ZONE_REQUEST', robot_id=r.id, zone_id=nxt, plan_version=r.plan_version, reason=f'held_by={owner}')
+            # [수정 2026-11-20] T-48: 보고 위치로 막혔으면 표시(off_node)
+            why = f'held_by={owner}' + (
+                ' off_node' if self.locks.get(nxt) != owner and not any(
+                    self.locks.get(n) == owner
+                    for n in self.graph.conflict[nxt]) else '')
+            self.io.log('ZONE_REQUEST', robot_id=r.id, zone_id=nxt,
+                        plan_version=r.plan_version, reason=why)
         self.m['blocked_wait'] += dt
         if self.now - r.wait_since > self.stall_timeout and self.now - r.last_replan > 2.0:
             self._resolve_stall(r, owner)
@@ -1146,9 +1571,67 @@ class FleetCore:
             o = self.locks.get(n)
             if o not in (None, rid):
                 return o
+        # [수정 2026-11-20] T-48: 노드에서 벗어나 서 있는 로봇은 보고 위치로도
+        # 막음(락은 가장 가까운 노드에만 잡혀 있어 옆 노드가 비어 보였음)
+        return self._pos_blocker(node, rid)
+
+    # [수정 2026-11-20] T-48: 신규
+    def _stray(self, o: Robot) -> bool:
+        """노드에서 벗어나 서 있는(허가받은 구간을 주행 중이 아닌) 로봇인지.
+
+        주행 중인 로봇(다음 구간 허가를 받고 아직 도착 보고 전)은 지나는
+        두 노드의 락으로 덮이므로 제외함. 그래야 노드를 떠나는 정상 통과를
+        막지 않음. 노드 위 흔들림은 여기서 거르지 않고 _pos_blocker·_table 이
+        pos_block_dist(12 cm)로 거름(W1-B1 처럼 15.7 cm 떨어진 노드가 위치 추정
+        흔들림만으로 잠기지 않게).
+
+        Args:
+            o: 로봇.
+
+        Returns:
+            보고 위치를 점유 판단에 써야 하면 True.
+        """
+        if o.still_pos is None:
+            return False                                # 아직 위치 보고 없음
+        if o.route and o.granted > o.idx >= 0:
+            return False                                # 허가받은 구간 주행 중
+        # [수정 2026-11-20] T-52: 6 cm(off_node_dist) 문턱을 없앰. 서 있는
+        # 로봇은 모두 보고 위치로 봄. 노드 위 흔들림은 pos_block_dist 가
+        # 거름(실기기 09: W1 에서 5.9 cm 벗어난 로봇 옆 B1 이 열려 있었음)
+        return True
+
+    # [수정 2026-11-20] T-48: 신규
+    def _pos_blocker(self, node: str, rid: str) -> str | None:
+        """보고 위치로 노드를 막는 로봇(노드에서 벗어나 서 있는 로봇).
+
+        노드에서 벗어나 서 있는 다른 로봇의 보고 위치가 node 에서
+        pos_block_dist(기본 0.12 m) 안이면 그 로봇.
+
+        끊긴 로봇도 마지막 보고 위치로 봄(락과 같이, 어디 있는지 모르면
+        움직이지 않았다고 봄).
+
+        Args:
+            node: 들어가려는 노드.
+            rid: 들어가려는 로봇.
+
+        Returns:
+            막는 로봇 이름, 없으면 None.
+        """
+        xy = self.graph.nodes[node]
+        for o in sorted(self.robots.values(), key=lambda b: b.id):
+            # [수정 2026-11-20] T-52: SAFE_DIST 대신 pos_block_dist(12 cm)
+            if o.id != rid and self._stray(o) \
+                    and math.dist(xy, (o.x, o.y)) < self.pos_block_dist:
+                return o.id
         return None
 
     def _resolve_stall(self, r, owner):
+        """정체 처리: owner 가 다음 노드를 막아 오래 기다린 로봇 r.
+
+        상대가 나에게 양보 중이면 기다리고, 서로 막혔으면 우선순위가 높은
+        쪽이 조금 더 기다린다. 나머지는 다시 계획하고, 그래도 막히면
+        (서로 막힘이거나 상대가 못 움직이면) 물러선다.
+        """
         self.m['stalls'] += 1
         r.last_replan = self.now
         o = self.robots[owner]
@@ -1157,6 +1640,8 @@ class FleetCore:
         # [수정 2026-11-17] A3: 단, 그 상대가 끊겼으면 기다리지 않음
         if o.yield_to == r.id and o.route and not o.estop and o.online:
             return
+        # 서로 막힘: 상대가 나를 기다리거나, 다시 시도를 기다리거나,
+        # 상대의 다음 노드를 내가 막음
         mutual = o.blocked_by == r.id or o.pending_goal is not None or \
             (o.route and 0 <= o.idx and o.idx + 1 < len(o.route) and self._blocker(o.route[o.idx + 1].node, o.id) == r.id)
         # in a mutual block the lower-priority robot yields first; the other one waits one more round
@@ -1166,10 +1651,12 @@ class FleetCore:
         if mutual and not stuck and self._rank(r) > self._rank(o) and \
                 self.now - r.wait_since < 2.5 * self.stall_timeout:
             return
+        # 비조율 계획기는 다른 로봇이 잡은 노드를 빼고 다시 계획
         blocked = frozenset(n for x in self.robots.values() if x.id != r.id for n in x.held)
         self.m['replans'] += 1
         ok = self._start_move(r, r.goal, r.mode, replan=True,
                               blocked=blocked if not self.planner.coordinated else frozenset())
+        # 새 계획의 첫 구간이 비어 있으면 끝
         if ok and r.route and len(r.route) > 1 and self._blocker(r.route[1].node, r.id) is None:
             return
         if mutual or stuck:
@@ -1177,7 +1664,10 @@ class FleetCore:
 
     def _yield_done(self, r):
         """After stepping aside for robot `o`, stay out of the way until `o` has passed the node we vacated (or finished,
-        or 30 s went by). Resuming earlier puts us straight back in its way and the two keep swapping places."""
+        or the wait ran out: 30 s, or YIELD_BACK_WAIT (60 s) when we went back
+        the way we came). Resuming earlier puts us straight back in its way and
+        the two keep swapping places.
+        """
         if not r.yield_to:
             return True
         o = self.robots.get(r.yield_to)
@@ -1210,6 +1700,10 @@ class FleetCore:
         return False
 
     def _rank(self, r):
+        """정체 판단의 우선순위(임무 우선순위 + 화물, 같으면 로봇 번호 작은 쪽).
+
+        로봇 id 의 끝 한 자리 숫자만 봄(pinky10 은 0 으로 봄).
+        """
         p = r.task.priority if r.task else 0
         return (p + (1 if r.task and r.task.carrying else 0), -int(r.id[-1]) if r.id[-1].isdigit() else 0)
 
@@ -1217,7 +1711,11 @@ class FleetCore:
         """Step aside so the other robot(s) can pass, then continue to the goal. Searches the free nodes around us and
         prefers a lay-by (비켜 서는 곳), then any node that is not on another robot's route.
         stay: an idle robot makes way (it has no goal of its own). back: with stay, it drives back to the node
-        it vacated once the other robot has passed, instead of staying on the side spot."""
+        it vacated once the other robot has passed, instead of staying on the side spot.
+        o: 비켜 줄 상대(None 이면 계획 실패로 물러남). strict: 상대의 길을
+        실제로 비우는 자리만 고름. clear: 더 피할 노드. 자리를 찾아 YIELD
+        경로를 보냈으면 True.
+        """
         # keep clear of the others' remaining routes AND of every node too close to them: a side spot next to the
         # aisle node the other robot needs (closer than SAFE_DIST) still blocks it, and the two would swap forever
         avoid = set()
@@ -1246,6 +1744,7 @@ class FleetCore:
             r.wait_since = self.now
             return False
 
+        # 지금 노드에서 n 까지 몇 단계인지(탐색 트리 prev 를 거슬러 셈)
         def depth(n):
             d = 0
             while prev[n] is not None:
@@ -1262,6 +1761,7 @@ class FleetCore:
                 hx, hy = ox / d, oy / d
         x0, y0 = self.graph.nodes[r.node]
 
+        # n 으로 가는 첫 단계 노드가 로봇 뒤쪽(hx, hy 반대편)에 있는지
         def behind(n):
             first = n
             while prev[first] is not None and prev[first] != r.node:
@@ -1273,11 +1773,12 @@ class FleetCore:
             cands.sort(key=lambda n: (depth(n) + (0 if n in pull_in else 1), not behind(n), depth(n)))
         else:
             cands.sort(key=lambda n: (n in avoid, not behind(n), depth(n) + (0 if n in pull_in else 2), depth(n)))
-        side = cands[0]
+        side = cands[0]  # 고른 비켜 설 자리
         path = [side]
         while prev[path[-1]] is not None:
             path.append(prev[path[-1]])
         path.reverse()
+        # 지금 경로를 취소하고 비켜 설 자리까지의 YIELD 경로를 보냄
         goal, mode = goal or r.goal, mode or r.mode
         if r.route:
             self.io.cancel_route(r.id)
@@ -1319,9 +1820,33 @@ class FleetCore:
 
     # ------------------------------------------------------------------ inputs from robots
     def on_robot_status(self, rid, x, y, yaw, battery, charging, state, error=''):
+        """로봇의 상태 보고(/fleet/robot_status, 10 Hz)를 반영한다.
+
+        Args:
+            rid: 로봇 id.
+            x: 보고 위치 x(m, 지도 좌표).
+            y: 보고 위치 y(m).
+            yaw: 방향(rad).
+            battery: 배터리(0~100 으로 다룸).
+            charging: 충전 중.
+            state: RobotStatus.state(IDLE, MOVING, LOCALIZING 등).
+            error: device_state.ERROR 이름('' 또는 NO_ERROR = 없음).
+        """
         r = self.robots.get(rid)
         if not r:
             return
+        # [수정 2026-11-20] T-49: 로봇이 아직 위치를 모름(자동 위치 추정 중
+        # 또는 실패). 상태·오류만 기록하고 위치는 쓰지 않음. last_status 를
+        # 갱신하지 않아 이미 온라인이던 로봇은 상태 보고 시간 초과(tick 의
+        # 1초) 뒤 오프라인이 되고 새 배정·허가가 없음. 전에 잡은 락(held)은
+        # 남고, 전에 위치 보고가 있었으면(still_pos) _stray·_pos_blocker 가
+        # 마지막 위치로 계속 막음(실제 운용에서의 영향은 확인 필요).
+        # 위치가 잡히면 보통 보고가 옴
+        if state in UNLOCALIZED:
+            r.localizing = state
+            r.error = '' if error == 'NO_ERROR' else error
+            return
+        r.localizing = ''
         # [수정 2026-11-17] G2: 'NO_ERROR' 도 오류 없음으로 봄
         r.last_status = self.now
         r.error = '' if error == 'NO_ERROR' else error
@@ -1338,19 +1863,23 @@ class FleetCore:
         if r.online:
             r.dist += math.hypot(x - r.x, y - r.y)
         r.x, r.y, r.yaw, r.battery, r.charging, r.reported_state, r.online = x, y, yaw, battery, charging, state, True
+        # 실측 지도의 한가한 로봇: 보고 위치에서 가장 가까운 노드가 비었으면
+        # 그 노드에 서 있다고 보고 락을 잡음
         if self.graph.map_id and state == 'IDLE' and not (r.route or r.pending_goal or r.task):
             vertex = self.graph.nearest_node(x, y)
             if self.locks.get(vertex) in (None, rid):
                 self._claim_vertex(r, vertex)
 
     def _claim_vertex(self, robot, node):
+        """로봇의 락을 모두 풀고 node 하나만 잡는다(그 노드에 서 있다고 봄)."""
         for previous in robot.held:
             if self.locks.get(previous) == robot.id:
                 del self.locks[previous]
         robot.node, robot.held = node, {node}
         self.locks[node] = robot.id
 
-    def on_route_progress(self, rid, plan_version, reached, state=''):
+    def on_route_progress(self, rid, plan_version, reached):
+        """로봇이 경로의 reached 번째 노드에 도착했다는 피드백을 반영한다."""
         r = self.robots.get(rid)
         if not r or not r.route or plan_version != r.plan_version or reached <= r.idx:
             return
@@ -1360,6 +1889,7 @@ class FleetCore:
         r.idx = reached
         r.node = r.route[reached].node
         r.heading = ''
+        # 지나온 노드의 락을 풂
         for n in list(r.held):
             if n != r.node:
                 r.held.discard(n)
@@ -1380,6 +1910,18 @@ class FleetCore:
             self._arrived(r)
 
     def on_route_result(self, rid, plan_version, success, reason, reached):
+        """로봇의 경로 결과(NavigateRoute 결과)를 반영한다.
+
+        정해진 실패(NAV2_FAILED 등)는 route_retries 번까지 노드로 돌아가 다시
+        계획하고, 그 밖의 실패는 임무를 보류(SUSPENDED)한다.
+
+        Args:
+            rid: 로봇 id.
+            plan_version: 결과가 속한 경로 번호(옛 번호는 무시).
+            success: 성공 여부.
+            reason: 실패 이유(NAV2_FAILED, NO_PROGRESS, PREEMPTED 등).
+            reached: 마지막으로 도착한 경로 칸(쓰지 않음).
+        """
         r = self.robots.get(rid)
         if not r or plan_version != r.plan_version:
             return                                            # late result of an old plan: ignore
@@ -1387,7 +1929,7 @@ class FleetCore:
             if r.route:
                 self.on_route_progress(rid, plan_version, len(r.route) - 1)
             return
-        if reason in ('PREEMPTED', 'CANCELED'):
+        if reason in ('PREEMPTED', 'CANCELED'):  # 관제가 취소·선점
             return
         r.route = None
         if r.estop:
@@ -1407,10 +1949,17 @@ class FleetCore:
                         plan_version=plan_version, reason=f'{reason} try={r.fail_count}/{self.route_retries}')
             return
         r.pending_goal = None
+        # [수정 2026-11-20] T-44: 다시 시도하지 않는 경로 실패를 기록(임무가
+        # 없는 이동도 로그에 남게). NO_PROGRESS(로봇의 무진행 감시) 등은
+        # 아래에서 임무를 보류(SUSPENDED)하고, 보류는 관리자 알람이 됨
+        self.io.log('ROUTE_FAIL', robot_id=r.id,
+                    task_id=r.task.id if r.task else '', zone_id=r.goal,
+                    plan_version=plan_version, result='FAIL', reason=reason)
         if r.task and r.task.state == 'IN_PROGRESS':
             self._suspend(r.task, reason)
 
     def _arrived(self, r):
+        """경로 끝 도착: 비켜 서기면 대기, 복귀면 끝, 임무면 다음 단계."""
         r.route, r.yield_note = None, ''
         if r.pending_goal:                                    # we only stepped aside; continue later
             return
@@ -1425,6 +1974,14 @@ class FleetCore:
             self._run_phase(r)
 
     def on_arm_result(self, arm_id, task_id, success, reason=''):
+        """팔 작업 결과(ArmJob 결과)를 반영한다.
+
+        Args:
+            arm_id: 서빙 팔이면 로봇 id, 조리 팔이면 cook_arm_a/b.
+            task_id: 작업의 임무 id.
+            success: 성공 여부.
+            reason: 실패 이유(ARM_OFFLINE, REJECTED 등).
+        """
         if arm_id in self.robots:
             r = self.robots[arm_id]
             self.io.log('ARM_DONE', task_id=task_id, robot_id=arm_id, zone_id=r.node, result='OK' if success else 'FAIL',
@@ -1523,7 +2080,7 @@ class FleetCore:
 
     def _unavailable_reason(self, r: Robot) -> str:
         """새 임무를 줄 수 없는 이유 ('' = 줄 수 있음). _available 과 같은
-        조건을 같은 순서로 본다."""
+        조건을 본다(순서는 다름: 오류를 임무보다 먼저 봄)."""
         if not r.online:
             return 'OFFLINE'
         if r.paused:
@@ -1542,6 +2099,13 @@ class FleetCore:
         return ''
 
     def on_doneness(self, task_id, decision, stamp):
+        """AI 익힘 판정을 저장한다(_cook_tick 이 읽음).
+
+        Args:
+            task_id: COOK 임무 id.
+            decision: 판정(UNDERCOOKED 면 다시 튀김, 그 밖은 완료로 봄).
+            stamp: 받은 시각(대기 시작 뒤에 온 판정만 씀).
+        """
         self.doneness[task_id] = (decision, stamp)
 
     # [수정 2026-11-18] W8-3: 계획 실패가 끝없이 반복돼도 보류·알림이 없었음
@@ -1574,12 +2138,22 @@ class FleetCore:
                         result='FAIL', reason=waited)
 
     def _suspend(self, t, reason):
+        """임무를 보류(SUSPENDED)하고 기록·이벤트를 낸다(RETRY_TASK 로 재개)."""
         t.state, t.reason = 'SUSPENDED', reason
         self.io.log('TASK_SUSPEND', task_id=t.id, robot_id=t.robot_id, visit_id=t.visit_id, order_id=t.order_id,
                     result='FAIL', reason=reason)
         self._event(t, 'SUSPENDED', reason)
 
     def _move_to_vertex(self, robot_id, destination):
+        """관리자 이동 명령(MOVE_TO_VERTEX, 실측 지도 전용).
+
+        Args:
+            robot_id: 로봇 id.
+            destination: 목적 노드.
+
+        Returns:
+            (받았는지, 화면에 보여 줄 메시지).
+        """
         if not self.graph.map_id or destination not in self.graph.nodes or robot_id not in self.robots:
             return False, '지도, 로봇 또는 주행 노드를 확인하세요.'
         robot = self.robots[robot_id]
@@ -1604,10 +2178,8 @@ class FleetCore:
         if robot.mode == 'YIELD' and robot.route and not robot.task \
                 and robot.online and not robot.estop:
             # the robot is stepping aside for another one right now: take the order and start it from the side spot
-            self.seq += 1
-            task = Task(f'M{self.seq:04d}', 'MOVE', created=self.now, start_node=destination,
-                        phases=[('move', destination, 'NORMAL')])
-            self.tasks[task.id] = task
+            # [수정 2026-11-20] D-05: MOVE 임무 만들기를 _new_move_task 로 모음
+            task = self._new_move_task(destination)
             task.robot_id, task.state, task.assigned_at = robot.id, 'IN_PROGRESS', self.now
             robot.task = task
             self._event(task, 'ASSIGNED')
@@ -1615,18 +2187,33 @@ class FleetCore:
             robot.yield_to, robot.yield_from, robot.yield_until = robot.yield_note, robot.route[0].node, self.now + 30.0
             return True, f'{task.id}: {robot.yield_note or "다른 로봇"}에게 길을 비켜 준 뒤 {destination}(으)로 이동'
         # [수정 2026-11-17] G2: 자동 배정 조건(_available) 대신 _movable
-        if not self._movable(robot) or robot.route or robot.pending_goal or robot.reported_state != 'IDLE':
-            return False, '로봇이 이동 가능한 대기 상태인지 확인하세요.'
+        # [수정 2026-11-20] T-52: 어떤 조건에 걸렸는지 알려 줌(실기기 09 에서
+        # 같은 문장으로 두 번 거절됐는데 원인을 알 수 없었음)
+        # [수정 2026-11-27] T-65: 목적지를 넘김(홈이면 배터리 하한 예외)
+        why = self._unmovable_reason(robot, destination)
+        if why:
+            self.io.log('MOVE_REJECT', robot_id=robot_id, zone_id=destination,
+                        reason=why)
+            return False, f'이동할 수 없는 상태입니다: {why}'
         robot.heading = ''  # a failed route may still retain its last granted target
         robot.fail_count, robot.avoid_node = 0, ''
         start = self.graph.nearest_node(robot.x, robot.y)
         off = math.dist((robot.x, robot.y), self.graph.nodes[start])
         if off <= self.off_node_dist:
-            if start == destination:
-                return False, '이미 해당 노드에 있습니다.'
+            # [수정 2026-11-20] T-52: 노드에서 몇 cm 벗어난 로봇은 같은 노드로
+            # 다시 세우는 명령을 받음. Nav2 도착 허용 오차(1.5 cm) 안이면 거절
+            if start == destination and off <= RESETTLE_MIN:
+                return False, (f'이미 해당 노드에 있습니다'
+                               f'(노드에서 {off * 100:.1f} cm).')
             if self._blocker(start, robot_id):
                 return False, '출발 노드를 다른 로봇이 점유 중입니다.'
             self._claim_vertex(robot, start)
+            # [수정 2026-11-20] T-52: 같은 노드로 다시 세우기는 노드
+            # 복귀(REJOIN)와 같이 heading 을 그 노드로 둬, 경로 첫 노드까지
+            # 들어가게 함
+            # (노드 하나짜리 경로를 건너뛰는 _run_phase 규칙을 피함)
+            if start == destination:
+                robot.heading = destination
         else:
             # not on a node: the route starts with the drive back to the nearest free node
             if self.locks.get(start) in (None, robot_id):
@@ -1634,13 +2221,21 @@ class FleetCore:
             if not self._rejoin(robot):
                 return False, f'로봇이 주행 노드에서 {off * 100:.0f}cm 벗어나 있고, {self.rejoin_max_dist:.0f}m 안에 비어 있는 노드가 없습니다.'
             start = robot.node
-        self.seq += 1
-        task = Task(f'M{self.seq:04d}', 'MOVE', created=self.now, start_node=destination,
-                    phases=[('move', destination, 'NORMAL')])
-        self.tasks[task.id] = task
+        # [수정 2026-11-20] D-05: MOVE 임무 만들기를 _new_move_task 로 모음
+        task = self._new_move_task(destination)
         self._assign(task, robot)
         return True, f'{task.id}: {start} → {destination}' + (f' (노드에서 {off * 100:.0f}cm 벗어나 있어 {start}로 복귀 후 이동)'
                                                               if off > self.off_node_dist else '')
+
+    # [수정 2026-11-20] D-05: _move_to_vertex 두 곳의 같은 코드를 모음
+    def _new_move_task(self, destination):
+        """새 MOVE 임무를 만들어 임무 목록에 넣고 돌려준다(배정은 호출 쪽)."""
+        self.seq += 1
+        task = Task(f'M{self.seq:04d}', 'MOVE', created=self.now,
+                    start_node=destination,
+                    phases=[('move', destination, 'NORMAL')])
+        self.tasks[task.id] = task
+        return task
 
     # [수정 2026-11-18] W8-2: 이동 명령의 목적지 겹침 검사
     def _heading_near(self, destination: str, robot_id: str) -> str:
@@ -1701,10 +2296,18 @@ class FleetCore:
                 sent += 1
                 notes.append(f'{r.id}: 이미 홈({r.home})')
                 continue
+            # [수정 2026-11-27] T-65: 이미 홈으로 가는 중(배터리 하한 자동
+            # 복귀·임무 뒤 복귀)이면 "경로 실행 중"으로 거절하지 않고 받음
+            if r.returning and r.task is None and r.park == r.home \
+                    and (r.route or r.pending_goal):
+                sent += 1
+                notes.append(f'{r.id}: 이미 홈({r.home})으로 복귀 중')
+                continue
             if self.graph.map_id:
                 ok, message = self._move_to_vertex(r.id, r.home)
             else:
-                ok = self._movable(r) and not r.route
+                # [수정 2026-11-27] T-65: 홈 복귀는 배터리 하한 예외
+                ok = self._movable(r, r.home) and not r.route
                 message = f'{r.home}(으)로 복귀' if ok else \
                     '로봇이 이동 가능한 대기 상태인지 확인하세요.'
                 if ok:
@@ -1716,14 +2319,29 @@ class FleetCore:
         return sent > 0, ' / '.join(notes)
 
     # ------------------------------------------------------------------ operator commands
+    # [수정 2026-11-25] I/F 정의서 v0.2 이름: /fms/command ->
+    # /frybot/tasks/control
+    # [수정 2026-11-26] I/F v0.3 최종 판 이름(docstring):
+    # /frybot/tasks/control -> /fms/command
     def command(self, cmd, target, arg=''):
+        """관리자·관제 명령을 처리한다(/fms/command).
+
+        Args:
+            cmd: GO_HOME, MOVE_TO_VERTEX, SET_SCHEDULER, SET_PLANNER, PAUSE,
+                ESTOP, SET_STANDBY, RESUME, RETRY_TASK, REASSIGN, CANCEL_TASK.
+            target: 로봇 id, 임무 id 또는 알고리즘 이름(명령에 따라).
+            arg: 목적 노드, on/off, 사유 등.
+
+        Returns:
+            (성공 여부, 메시지). 없는 대상은 False 로 돌려줌.
+        """
         try:
             # [수정 2026-11-17] 홈 복귀 명령
             if cmd == 'GO_HOME':
                 return self._send_home(target)
-            if cmd == 'MOVE_TO_VERTEX':
+            if cmd == 'MOVE_TO_VERTEX':  # target 로봇을 arg 노드로
                 return self._move_to_vertex(target, arg)
-            if cmd == 'SET_SCHEDULER':
+            if cmd == 'SET_SCHEDULER':  # 이름은 target 또는 arg
                 self.set_scheduler(target or arg)
                 return True, f'scheduler={self.scheduler.name}'
             if cmd == 'SET_PLANNER':
@@ -1746,7 +2364,7 @@ class FleetCore:
                 if r.task and r.task.state == 'IN_PROGRESS':
                     self._suspend(r.task, 'PAUSED')
                 return True, f'{target} paused'
-            if cmd == 'ESTOP':
+            if cmd == 'ESTOP':  # 로봇 한 대 비상 정지
                 r = self.robots[target]
                 r.estop, r.paused = True, False
                 if r.route:
@@ -1758,10 +2376,10 @@ class FleetCore:
                 if r.task and r.task.state == 'IN_PROGRESS':
                     self._suspend(r.task, 'E_STOP')
                 return True, f'{target} stopped'
-            if cmd == 'SET_STANDBY':
+            if cmd == 'SET_STANDBY':  # 1/true/on 이면 켬
                 self.use_standby = (target or arg).lower() in ('1', 'true', 'on')
                 return True, f'standby={self.use_standby}'
-            if cmd == 'RESUME':
+            if cmd == 'RESUME':  # 정지 해제, 보류 임무 재개
                 r = self.robots[target]
                 r.estop, r.paused, r.fail_count = False, False, 0
                 self.io.log('RESUME', robot_id=r.id, zone_id=r.node)
@@ -1770,7 +2388,7 @@ class FleetCore:
                 if r.task is None:
                     self._go_home(r)
                 return True, f'{target} resumed'
-            if cmd == 'RETRY_TASK':
+            if cmd == 'RETRY_TASK':  # target: 보류된 임무 id
                 t = self.tasks[target]
                 if t.state != 'SUSPENDED':
                     return False, 'task is not suspended'
@@ -1788,7 +2406,7 @@ class FleetCore:
                 self._event(t, 'RESUMED')
                 self._run_phase(r)
                 return True, 'task resumed from the failed step'
-            if cmd == 'REASSIGN':
+            if cmd == 'REASSIGN':  # 보류 임무를 대기열로
                 t = self.tasks[target]
                 if t.state != 'SUSPENDED' or t.type not in AMR_TASKS:
                     return False, 'only a suspended AMR task can be reassigned'
@@ -1802,7 +2420,7 @@ class FleetCore:
                 t.robot_id, t.state, t.pi, t.reason = '', 'PENDING', 0, ''
                 self._event(t, 'REASSIGNED')
                 return True, 'task returned to the queue'
-            if cmd == 'CANCEL_TASK':
+            if cmd == 'CANCEL_TASK':  # 임무 취소, 로봇은 복귀
                 t = self.tasks[target]
                 if t.state in ('DONE', 'CANCELED'):
                     return False, 'task already finished'
@@ -1822,6 +2440,12 @@ class FleetCore:
 
     # ------------------------------------------------------------------ cooking cell
     def _recipe(self, menu):
+        """메뉴의 조리 공정 목록을 만든다(시간은 cook_time_scale 로 나눔).
+
+        공정: ('acq', 자원) 한꺼번에 잡기, ('rel', 자원) 놓기,
+        ('arm', 'A'|'B', 작업, 초), ('timer', 초, 이름), ('doneness',) 익힘
+        판정, ('ready', 받는 곳). 'SLOT:' 자원은 받는 곳 한 칸.
+        """
         s = self.cook_scale
         fry = [('acq', {'ARM_A', 'FRYER'}), ('arm', 'A', 'LOAD_BASKET', 3.0), ('arm', 'A', 'DROP_IN_FRYER', 2.0),
                ('rel', {'ARM_A'}), ('timer', 600.0 / s, 'FRYING'), ('doneness',)]
@@ -1840,10 +2464,13 @@ class FleetCore:
         raise ValueError(f'unknown menu {menu}')
 
     def _cook_tick(self):
+        """조리 작업마다 공정을 진행한다(한 번에 즉시 끝나는 공정 최대 8개)."""
         for j in list(self.cook_jobs):
             t = j.task
             if t.state != 'IN_PROGRESS':
                 if t.state in ('CANCELED', 'DONE'):
+                    # 잡은 팔·조리기를 풂. 받는 곳 접시 수(slots)는 줄이지 않음
+                    # (받는 곳을 잡은 뒤 취소되면 수가 남는지 확인 필요)
                     self._cook_release(j, set(self.res_owner))
                     self.cook_jobs.remove(j)
                 continue
@@ -1865,10 +2492,10 @@ class FleetCore:
                         j.label = 'COOKING'
                         self._event(t, 'COOKING')
                     j.pc += 1
-                elif op[0] == 'rel':
+                elif op[0] == 'rel':  # 자원 놓기
                     self._cook_release(j, op[1])
                     j.pc += 1
-                elif op[0] == 'arm':
+                elif op[0] == 'arm':  # 조리 팔 작업(끝나면 on_arm_result)
                     j.busy, j.label = True, op[2]
                     params = {'cook_task_id': t.id, 'menu': t.menu}
                     if op[2] == 'DROP_IN_FRYER':
@@ -1876,7 +2503,7 @@ class FleetCore:
                     self.io.arm_job('cook_arm_a' if op[1] == 'A' else 'cook_arm_b', t.id, op[2], op[3], params)
                     self.io.log('COOK_STEP', task_id=t.id, order_id=t.order_id, robot_id='cook_arm_' + op[1].lower(),
                                 result=op[2])
-                elif op[0] == 'timer':
+                elif op[0] == 'timer':  # 튀김 등 시간 대기
                     if j.until == 0.0:
                         j.until, j.label = self.now + op[1], op[2]
                         self.io.log('COOK_STEP', task_id=t.id, order_id=t.order_id, result=op[2], reason=f'{op[1]:.1f}s')
@@ -1885,7 +2512,7 @@ class FleetCore:
                         break
                     j.until = 0.0
                     j.pc += 1
-                elif op[0] == 'doneness':
+                elif op[0] == 'doneness':  # 익힘 판정(5초 안에 없으면 완료)
                     if not self.use_doneness:
                         j.pc += 1
                         continue
@@ -1904,7 +2531,7 @@ class FleetCore:
                         j.ops.insert(j.pc, ('timer', 120.0 / self.cook_scale, f'REFRY_{j.retries}'))
                         continue
                     j.pc += 1
-                elif op[0] == 'ready':
+                elif op[0] == 'ready':  # 조리 완료: 받는 곳에 놓임
                     t.state, t.finished_at, j.label = 'DONE', self.now, 'READY'
                     self.io.log('COOK_READY', task_id=t.id, order_id=t.order_id, zone_id=op[1],
                                 reason=f'dur={self.now - t.created:.1f}')
@@ -1913,12 +2540,24 @@ class FleetCore:
                     break
 
     def _cook_release(self, j, names):
+        """작업 j 가 잡은 자원 중 names 에 든 것을 놓는다(SLOT: 제외)."""
         for a in names:
             if not a.startswith('SLOT:') and self.res_owner.get(a) == j.task.id:
                 self.res_owner[a] = None
 
     # ------------------------------------------------------------------ state for UI
     def robot_state(self, r):
+        """화면에 보일 로봇 상태 이름(MOVING, SERVING, E_STOP 등).
+
+        Args:
+            r: 로봇.
+
+        Returns:
+            상태 이름 문자열.
+        """
+        # [수정 2026-11-20] T-49: 위치를 모르는 로봇(LOCALIZING 등)
+        if r.localizing and not r.online:
+            return r.localizing
         if r.estop:
             # [수정 2026-11-17] UR-18: 일시 중단은 따로 표시
             return 'PAUSED' if r.paused else 'E_STOP'
@@ -1949,9 +2588,11 @@ class FleetCore:
                 for r in self.robots.values() if r.route and r.granted > 0 and not r.estop]
 
     def estopped(self):
+        """비상 정지·일시 중단 중인 로봇 id 목록(생존 신호의 정지 목록)."""
         return [r.id for r in self.robots.values() if r.estop]
 
     def _off_node(self, r):
+        """서 있는 로봇이 노드에서 off_node_dist 넘게 벗어났는지(화면·알람)."""
         return bool(r.online and not r.route and not r.heading
                     and math.dist((r.x, r.y), self.graph.nodes[r.node]) > self.off_node_dist)
 
@@ -1962,7 +2603,36 @@ class FleetCore:
                 return j.ops[j.pc][2]
         return ''
 
+    # [수정 2026-11-20] T-53: 화면의 '남은 거리'. 누적 주행 거리(r.dist)가
+    # 아니라 지금 경로의 남은 길이(보고 위치 → 다음 노드 → 경로 끝)
+    def _remaining(self, r: Robot) -> float:
+        """현재 경로의 남은 거리(m)를 돌려준다.
+
+        Args:
+            r: 관제가 보는 로봇.
+
+        Returns:
+            보고 위치에서 아직 도착하지 않은 다음 경로 노드까지의 직선 거리와
+            그 노드부터 경로 마지막 노드까지의 통로 길이 합. 경로가 없거나
+            마지막 노드에 도착했으면 0.
+        """
+        if not r.route:
+            return 0.0
+        # idx 는 마지막으로 도착한 경로 칸(-1 이면 route[0] 으로 가는 중)
+        k = max(r.idx + 1, 0)
+        if k >= len(r.route):
+            return 0.0
+        nodes = [s.node for s in r.route[k:]]
+        rest = sum(self.graph.dist(a, b)
+                   for a, b in zip(nodes, nodes[1:], strict=False) if a != b)
+        return math.dist((r.x, r.y), self.graph.nodes[nodes[0]]) + rest
+
     def snapshot(self):
+        """화면용 전체 상태(/fms/state 의 JSON).
+
+        Returns:
+            알고리즘, 로봇, 최근 임무 40건, 락, 조리 셀, 지표를 담은 dict.
+        """
         return {
             'now': self.now,
             'map_id': self.graph.map_id,
@@ -1987,6 +2657,10 @@ class FleetCore:
                         'carrying': bool(r.task and r.task.carrying), 'plan_version': r.plan_version,
                         'blocked_by': r.blocked_by if r.wait_since is not None else '', 'online': r.online,
                         'route': [s.node for s in r.route[max(r.idx, 0):]] if r.route else [],
+                        # [수정 2026-11-20] T-53: remaining = 현재
+                        # 경로의 남은 거리(m). dist 는 누적 주행 거리
+                        # (벤치 지표, 화면 '누적 주행 거리' 항목)
+                        'remaining': round(self._remaining(r), 2),
                         'dist': round(r.dist, 2)} for r in self.robots.values()],
             'tasks': [{'id': t.id, 'type': t.type, 'state': t.state, 'robot': t.robot_id, 'table': t.table_id,
                        'menu': t.menu, 'visit': t.visit_id, 'order': t.order_id, 'item': t.item_id,

@@ -25,6 +25,7 @@ import statistics
 from .mock_fleet import MockFleet
 from .mock_fleet import TimeModel
 
+# 실제·모의 비교표에 횟수를 함께 찍을 관제 이벤트
 KEY_EVENTS = ('PLAN', 'REPLAN', 'ZONE_REQUEST', 'PLAN_WAIT', 'YIELD_WAIT',
               'YIELD_SKIP', 'RETREAT', 'ROUTE_RETRY', 'TASK_DONE')
 
@@ -62,6 +63,7 @@ def load_run(run_dir: str) -> tuple[dict, list[dict]]:
         rows = list(csv.DictReader(stream))
     if not rows:
         raise ValueError(f'{run_dir}: events.csv 가 비어 있음')
+    # 첫 줄 시각을 0 으로 맞춘 상대 시각(초)을 t 열로 붙임
     t0 = float(rows[0]['timestamp'])
     for row in rows:
         row['t'] = float(row['timestamp']) - t0
@@ -78,6 +80,8 @@ def fit_segments(rows: list[dict], graph) -> tuple[float, float, int]:
     Returns:
         (구간 지연 초, 속도 m/s, 쓴 구간 수).
     """
+    # node: 로봇별 마지막 도착 노드, grant: 로봇별 마지막 허가 (시각, 노드),
+    # seg: (구간 거리, 허가 -> 도착 시간). 허가받은 노드에 도착한 구간만 씀
     node, grant, seg = {}, {}, []
     for row in rows:
         rid, zone = row['robot_id'], row['zone_id']
@@ -86,11 +90,13 @@ def fit_segments(rows: list[dict], graph) -> tuple[float, float, int]:
         elif row['event'] == 'ZONE_ENTER':
             if node.get(rid) and grant.get(rid, (0, ''))[1] == zone:
                 dist = graph.dist(node[rid], zone)
-                if dist > 0.02:
+                if dist > 0.02:  # 2 cm 이하(제자리) 구간은 뺌
                     seg.append((dist, row['t'] - grant[rid][0]))
             node[rid] = zone
     if len(seg) < 5:
         raise ValueError('구간 기록이 부족해 시간 모델을 맞출 수 없음')
+    # 시간 = 절편 + 기울기 x 거리 의 최소제곱 직선. 절편이 구간 지연,
+    # 기울기의 역수가 속도
     n = len(seg)
     sx, sy = sum(d for d, _ in seg), sum(t for _, t in seg)
     sxx, sxy = sum(d * d for d, _ in seg), sum(d * t for d, t in seg)
@@ -99,7 +105,17 @@ def fit_segments(rows: list[dict], graph) -> tuple[float, float, int]:
 
 
 def commands_of(rows: list[dict]) -> list[tuple[float, str, str]]:
-    """실제 로그의 이동 명령 (시각, 로봇, 목적지)."""
+    """실제 로그의 이동 명령 (시각, 로봇, 목적지).
+
+    central_control 의 ADMIN 로그는 zone_id 에 대상 로봇, reason 에 명령
+    인자(목적지 노드)를 남김.
+
+    Args:
+        rows: 실제 이벤트 목록.
+
+    Returns:
+        MOVE_TO_VERTEX 명령의 (시각, 로봇, 목적지) 목록.
+    """
     return [(r['t'], r['zone_id'], r['reason']) for r in rows
             if r['event'] == 'ADMIN' and r['result'] == 'MOVE_TO_VERTEX']
 
@@ -119,12 +135,15 @@ def start_of(rows: list[dict], graph, plan: dict, prefer: list[str]) -> str:
         출발 노드. 알 수 없으면 ''.
     """
     rid = plan['robot_id']
+    # PLAN 의 reason 'len=N' 은 경로의 노드 수
     length = int(plan['reason'].split('len=')[1].split()[0])
     first = next((r['zone_id'] for r in rows if r['t'] >= plan['t']
                   and r['event'] == 'ZONE_GRANT'
                   and r['robot_id'] == rid), None)
     if first is None:
         return ''
+    # 첫 허가 노드의 이웃 중, 거기서 목적지까지의 최단 경로가 같은 길이이고
+    # 두 번째 노드가 첫 허가 노드인 것이 출발 후보
     cands = []
     for near, _ in graph.adj[first]:
         path = shortest_path(graph, near, plan['zone_id'])
@@ -135,7 +154,16 @@ def start_of(rows: list[dict], graph, plan: dict, prefer: list[str]) -> str:
 
 
 def shortest_path(graph, src: str, dst: str) -> list[str]:
-    """빈 지도에서의 최단 경로 노드 목록."""
+    """빈 지도에서의 최단 경로 노드 목록.
+
+    Args:
+        graph: 지도 그래프.
+        src: 출발 노드.
+        dst: 목적지 노드.
+
+    Returns:
+        src 부터 dst 까지의 노드 목록. 닿지 못하면 노드 수만큼에서 멈춤.
+    """
     dist = graph.sp_from(dst)
     path = [src]
     while path[-1] != dst and len(path) <= len(graph.nodes):
@@ -145,7 +173,18 @@ def shortest_path(graph, src: str, dst: str) -> list[str]:
 
 
 def tasks_of(events: list[dict], commands: list) -> list[dict | None]:
-    """명령마다 그 임무의 경과를 뽑음(받아들여지지 않았으면 None)."""
+    """명령마다 그 임무의 경과를 뽑음(받아들여지지 않았으면 None).
+
+    명령 1초 안의 같은 로봇·목적지 PLAN 을 그 명령의 임무로 봄.
+
+    Args:
+        events: 이벤트 목록(실제 로그 또는 모의 events).
+        commands: commands_of 의 결과.
+
+    Returns:
+        명령별 dict(done: 끝남, dur: PLAN->TASK_DONE 초, route: 들어간
+        노드 순서, count: 이벤트별 횟수) 또는 None.
+    """
     out = []
     for when, rid, dest in commands:
         plan = next((e for e in events if e['event'] == 'PLAN'
@@ -171,7 +210,14 @@ def tasks_of(events: list[dict], commands: list) -> list[dict | None]:
 # [수정 2026-11-18] W6: 보정한 계획(core_args: plan_overhead 등)으로 재생
 def replay(run_dir: str, model: TimeModel, verbose: bool,
            core_args: dict | None = None) -> None:
-    """실제 로그의 명령을 모의 로봇으로 실행하고 비교표를 출력함."""
+    """실제 로그의 명령을 모의 로봇으로 실행하고 비교표를 출력함.
+
+    Args:
+        run_dir: runs/<run_id> 폴더.
+        model: 모의 로봇 시간 모델.
+        verbose: 명령별 비교 줄도 출력할지.
+        core_args: FleetCore 에 넘길 계획 인자(plan_overhead 등).
+    """
     manifest, rows = load_run(run_dir)
     commands = commands_of(rows)
     world = ReplayWorld(list(manifest['robots']), model,
@@ -179,8 +225,8 @@ def replay(run_dir: str, model: TimeModel, verbose: bool,
     graph = world.core.graph
     homes = [graph.home_of(rid) for rid in manifest['robots']]
     todo = list(commands)
-    end = rows[-1]['t'] + 120.0
-    moved = 0
+    end = rows[-1]['t'] + 120.0  # 실제 로그 끝 + 120초까지만 돌림
+    moved = 0  # 출발 노드를 실제에 맞춰 다시 놓은 횟수
     while world.t < end and (todo or not world.idle()):
         world.step()
         while todo and todo[0][0] <= world.t:
@@ -196,6 +242,7 @@ def replay(run_dir: str, model: TimeModel, verbose: bool,
                     world.place(rid, node)
                     moved += 1
             world.core.command('MOVE_TO_VERTEX', rid, dest)
+    # 명령별 실제·모의 경과를 짝지어 비교
     real, sim = tasks_of(rows, commands), tasks_of(world.events, commands)
     print(f'\n== 모델 {model.name}: 구간 = {model.overhead:.2f}초 + 거리 / '
           f'{model.speed:.3f} m/s ==')
@@ -213,6 +260,7 @@ def replay(run_dir: str, model: TimeModel, verbose: bool,
             continue
         both += 1
         same += a['route'] == b['route']
+        # 실제 3초 이하 명령은 비율이 튀므로 뺌
         if a['done'] and b['done'] and a['dur'] > 3.0:
             ratios.append(b['dur'] / a['dur'])
         if verbose:
@@ -252,6 +300,17 @@ def _outcome(events: list[dict]) -> str:
 
 def _trial(map_robots: list[str], model: TimeModel, places: dict,
            moves: list[tuple[str, str]]) -> tuple[str, list[dict]]:
+    """정해 둔 자리에서 이동 명령을 넣고 300초까지 돌려 판단을 봄.
+
+    Args:
+        map_robots: 로봇 이름 목록.
+        model: 모의 로봇 시간 모델.
+        places: 로봇 -> 처음 놓을 노드.
+        moves: (로봇, 목적지) 이동 명령 목록.
+
+    Returns:
+        (_outcome 의 한 단어 또는 '명령 거절', 모의 이벤트 목록).
+    """
     world = ReplayWorld(map_robots, model, dt=0.2)
     for rid, node in places.items():
         world.place(rid, node)
@@ -276,8 +335,11 @@ def find_yield(model: TimeModel, limit: int, seed: int) -> None:
     """
     robots = ['pinky1', 'pinky2']
     graph = ReplayWorld(robots, model).core.graph
+    # 이름에 '_' 가 없는 노드만 출발·목적지 후보
     major = sorted(n for n in graph.nodes if '_' not in n)
     rng = random.Random(seed)
+    # idle: (출발, 목적지, 그 최단 경로 가운데에 서 있는 로봇의 노드)
+    # moving: (출발1, 목적지1, 출발2, 목적지2) 최단 경로가 2노드 이상 겹침
     idle, moving = [], []
     for src, dst in itertools.permutations(major, 2):
         path = shortest_path(graph, src, dst)
@@ -297,7 +359,7 @@ def find_yield(model: TimeModel, limit: int, seed: int) -> None:
     for name, cases in (('서 있는 로봇이 길을 막음', idle),
                         ('두 로봇이 동시에 이동', moving)):
         rng.shuffle(cases)
-        found = collections.defaultdict(list)
+        found = collections.defaultdict(list)  # 판단 -> 사례 목록
         for case in cases[:limit]:
             if len(case) == 3:
                 places = {'pinky1': case[0], 'pinky2': case[2]}
@@ -329,7 +391,6 @@ def find_yield(model: TimeModel, limit: int, seed: int) -> None:
 
 def main() -> None:
     """명령행 진입점."""
-    # [수정 2026-11-18] W8-1: 해시 씨앗 재실행(fix_hash_seed) 삭제
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument('run_dir', nargs='?', help='runs/<run_id> 폴더')
@@ -353,7 +414,7 @@ def main() -> None:
     ap.add_argument('--plan-speed-factor', type=float,
                     help='계획 속도 배율, 기본 0.9')
     args = ap.parse_args()
-    ideal = TimeModel('ideal', 0.08, 0.0)
+    ideal = TimeModel('ideal', 0.08, 0.0)  # 경량 시뮬과 같은 모델
     if args.find_yield:
         os.environ['FRYBOT_MAP_ID'] = args.map_id
         model = ideal
@@ -365,15 +426,19 @@ def main() -> None:
     if not args.run_dir:
         ap.error('실행 폴더가 필요함')
     manifest, rows = load_run(args.run_dir)
+    # 가상 매장 실행은 map_version 이 'frybot_...' 이라 빈 값(proto)으로 둠
     map_id = manifest.get('map_version', '')
     os.environ['FRYBOT_MAP_ID'] = '' if map_id.startswith('frybot_') else map_id
+    # 지역 import 인 이유는 확인 필요(Graph 는 만들 때 FRYBOT_MAP_ID 를 읽음)
     from .layout import Graph
     overhead, speed, n = fit_segments(rows, Graph())
     print(f'{args.run_dir}: 지도 {map_id}, 로봇 {manifest["robots"]}, '
           f'이동 명령 {len(commands_of(rows))}건')
     print(f'실제 구간 {n}개: 시간 = {overhead:.2f}초 + 거리 / {speed:.3f} m/s')
+    # 로그에서 맞춘 값(인자로 주면 그 값)으로 measured 모델을 만듦
     measured = TimeModel('measured', args.speed or speed,
                          overhead if args.overhead is None else args.overhead)
+    # 관제의 계획 인자(주지 않으면 FleetCore 기본값)
     core_args = {}
     if args.plan_speed:
         core_args['speed'] = args.plan_speed

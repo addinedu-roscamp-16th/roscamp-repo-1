@@ -50,17 +50,21 @@ class SimBackend:
         """
         self.node = node
         self.guests = {}
+        # 가상 매장(proto)은 layout 의 충전대 노드, 실측 지도는 빈 목록
         self.chargers = chargers
-        self.tf = TransformBroadcaster(node)
+        self.tf = TransformBroadcaster(node)  # map -> odom / map -> base 송신
         rid = node.rid
+        # 가짜 바퀴 관절값(RViz 모델), publish() 에서 냄
         self.pub_js = node.create_publisher(
             JointState, f'/{rid}/joint_states', 10)
+        # 매장 시뮬 상태(손님 좌표). _guide_frame 이 씀
         node.create_subscription(String, '/sim/world_state', self._world, 10,
                                  callback_group=cb)
         # 예전 조건 그대로: TF 로 위치를 받지 않고 Gazebo 로 주행할 때
         if node.pose_source != 'tf' and node.drive in ('cmd_vel', 'nav2'):
             node.create_subscription(TFMessage, '/gz/model_poses',
                                      self._gz_pose, 20, callback_group=cb)
+        # 안내 카메라 대역 프레임을 5 Hz 로 보냄
         node.create_timer(0.2, self._guide_frame, callback_group=cb)
 
     def _world(self, m: String) -> None:
@@ -79,6 +83,7 @@ class SimBackend:
         """
         n = self.node
         gh = n.guide_goal
+        # 지금 실행 중인 경로가 손님 안내(GUIDE)일 때만
         if gh is None or gh is not n.cur or not gh.is_active:
             return
         visit_id = gh.request.visit_id
@@ -94,6 +99,7 @@ class SimBackend:
         자세가 올 때마다 map -> odom 을 다시 맞춘다.
         """
         n = self.node
+        # Gazebo 가 모든 모델 자세를 한 메시지로 보냄. 자기 모델만 씀
         for t in m.transforms:
             if t.child_frame_id == n.rid:
                 q = t.transform.rotation
@@ -101,6 +107,7 @@ class SimBackend:
                 n.yaw = math.atan2(2 * (q.w * q.z + q.x * q.y),
                                    1 - 2 * (q.y * q.y + q.z * q.z))
                 n.have_truth = True
+                # map -> odom = 참값 자세 x (odom 기준 자세)^-1
                 ox, oy, _ = n.odom
                 dyaw = _wrap(n.yaw - n.odom[2])
                 c, s_ = math.cos(dyaw), math.sin(dyaw)
@@ -111,13 +118,16 @@ class SimBackend:
                 tf.transform.translation.y = n.y - (s_ * ox + c * oy)
                 tf.transform.rotation.z = math.sin(dyaw / 2)
                 tf.transform.rotation.w = math.cos(dyaw / 2)
+                # Nav2 주행일 때만 TF 를 냄. cmd_vel 주행은 위치값만 씀
                 if n.drive == 'nav2':
                     self.tf.sendTransform(tf)
                 return
 
     def update_battery(self) -> None:
         """가짜 배터리: 충전대에 서 있으면 오르고, 아니면 천천히 내린다."""
+        # 상태 보고(_publish, 10 Hz)마다 불림: 충전 +0.5 %/s, 방전 -0.005 %/s
         n = self.node
+        # 충전대 노드 2 cm 안에서 서 있으면(IDLE) 충전 중
         on_charger = any(math.hypot(n.x - cx, n.y - cy) < 0.02
                          for cx, cy in self.chargers)
         n.charging = on_charger and n.nav_state == 'IDLE'
@@ -133,6 +143,7 @@ class SimBackend:
             now: 상태 보고와 같은 시각(builtin_interfaces/Time).
         """
         n = self.node
+        # Nav2 주행은 map -> odom(_gz_pose) + odom -> base 로 자세가 나옴
         if n.drive != 'nav2':
             t = TransformStamped()
             t.header.stamp, t.header.frame_id = now, 'map'
@@ -145,5 +156,6 @@ class SimBackend:
         js.header.stamp = now
         js.name = ['l_wheel_joint', 'r_wheel_joint', 'caster_rotate_joint',
                    'caster_wheel_joint']
+        # 좌우 바퀴를 같은 각도로(kinematic 주행이 누적한 n.wheel), 캐스터 0
         js.position = [n.wheel, n.wheel, 0.0, 0.0]
         self.pub_js.publish(js)

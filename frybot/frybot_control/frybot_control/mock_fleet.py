@@ -46,10 +46,11 @@ from .fleet_core import FleetCore
 from .fleet_core import FleetIO
 from .layout import SAFE_DIST
 
+# 임무 중 정지를 stall30·unplanned30·intended30 으로 세는 기준(초)
 STALL_SEC = 30.0
 # [수정 2026-11-18] W11: 의도된 대기 판정 기준(초)과 계획에 없는 정지 참고 기준
-INTENDED_LIMIT_SEC = 20.0
-UNPLANNED_REF_SEC = 20.0
+INTENDED_LIMIT_SEC = 20.0  # intended20(판정) 기준
+UNPLANNED_REF_SEC = 20.0  # unplanned20(참고) 기준
 
 
 # [수정 2026-11-18] W8-1: 해시 씨앗을 0으로 두고 다시 실행하던 fix_hash_seed 를
@@ -60,10 +61,10 @@ UNPLANNED_REF_SEC = 20.0
 # 같은 값을 씀
 PLAN_FAIL_LONG_SEC = _fleet_core.PLAN_FAIL_SUSPEND_SEC
 # [수정 2026-11-18] W7: 서 있는 이유
-INTENDED = 'intended'
-UNPLANNED = 'unplanned'
+INTENDED = 'intended'  # 의도된 대기(_stand_kind 반환값)
+UNPLANNED = 'unplanned'  # 계획에 없는 정지
 # [수정 2026-11-18] W10: 실행 모델이 구간마다 출발 전에 쓰는 시간
-START_DELAY = 'start_delay'
+START_DELAY = 'start_delay'  # 구간 출발 지연(30초 판정 제외)
 
 
 @dataclasses.dataclass
@@ -85,37 +86,54 @@ class TimeModel:
     guide_speed: float | None = None
 
     def segment_time(self, dist: float, mode: str = 'NORMAL') -> float:
-        """흔들림 없이 한 구간을 가는 데 걸리는 시간(초)."""
+        """흔들림 없이 한 구간을 가는 데 걸리는 시간(초).
+
+        Args:
+            dist: 구간 거리(m).
+            mode: 구간 방식(NORMAL·GUIDE·YIELD). GUIDE 만 안내 속도.
+
+        Returns:
+            overhead + dist / 속도(초).
+        """
         return self.overhead + dist / self.speed_of(mode)
 
     def speed_of(self, mode: str) -> float:
-        """구간 방식에 따른 속도(m/s)."""
+        """구간 방식에 따른 속도(m/s).
+
+        Args:
+            mode: 구간 방식. 'GUIDE' 이고 guide_speed 가 있을 때만 안내
+                속도, 나머지는 speed.
+
+        Returns:
+            속도(m/s).
+        """
         if mode == 'GUIDE' and self.guide_speed is not None:
             return self.guide_speed
         return self.speed
 
 
 # 11-16 실기기 실행(run_20261116_175751, 구간 147개)에서 맞춘 값
-MEASURED_SPEED = 0.135
-MEASURED_OVERHEAD = 2.27
+MEASURED_SPEED = 0.135  # 주행 속도(m/s)
+MEASURED_OVERHEAD = 2.27  # 구간 지연(초)
 
 
 @dataclasses.dataclass
 class Bot:
     """모의 로봇 한 대의 상태."""
 
-    id: str
-    x: float = 0.0
+    id: str  # 로봇 이름(pinkyN)
+    x: float = 0.0  # 지도 좌표(m)
     y: float = 0.0
-    yaw: float = 0.0
+    yaw: float = 0.0  # 방향(rad). 움직일 때만 갱신
+    # 받은 경로 [(노드, x, y), ...]. None 이면 경로 없음(서 있음)
     route: list | None = None
-    pv: int = 0
-    granted: int = 0
-    reached: int = 0
-    mode: str = 'NORMAL'
-    seg: tuple | None = None
-    hold: float = 0.0
-    factor: float = 1.0
+    pv: int = 0  # 지금 경로의 번호(plan_version)
+    granted: int = 0  # 허가받은 마지막 경로 인덱스
+    reached: int = 0  # 도착한 마지막 경로 인덱스(-1: 첫 노드로 가는 중)
+    mode: str = 'NORMAL'  # 구간 방식(NORMAL·GUIDE·YIELD)
+    seg: tuple | None = None  # 지금 가는 구간 (pv, 목표 인덱스)
+    hold: float = 0.0  # 이 구간 출발 전 남은 지연(초)
+    factor: float = 1.0  # 이 구간의 흔들림 배율(시간에 곱함)
     # [수정 2026-11-18] W10: 이번 단계에 구간 출발 지연으로 서 있었는지
     delayed: bool = False
 
@@ -147,19 +165,22 @@ class MockFleet(FleetIO):
             seed: 흔들림 난수 씨앗.
             **core_args: FleetCore 에 넘길 인자.
         """
-        self.dt, self.t, self.model = dt, 0.0, model
+        self.dt, self.t, self.model = dt, 0.0, model  # t: 모의 시각(초)
         # [수정 2026-11-18] W8-1: 관제 코어의 난수도 같은 씨앗으로 재현
         core_args.setdefault('rng_seed', seed)
         self.core = FleetCore(self, robot_ids=robot_ids, **core_args)
         self.bots = {rid: Bot(rid) for rid in robot_ids}
+        # 관제 코어가 정한 출발 위치(홈 노드)에 모의 로봇을 놓음
         for rid, robot in self.core.robots.items():
             self.bots[rid].x, self.bots[rid].y = robot.x, robot.y
+        # 다음 단계에 수락 알림(index 0)을 보낼 (로봇, 경로 번호)
         self.accepted: list[tuple[str, int]] = []
+        # 진행 중인 팔 작업 (끝날 시각, 팔 id, 임무 id)
         self.arm: list[tuple[float, str, str]] = []
         self.events: list[dict] = []
         self.task_events: list[dict] = []
-        self._rng = random.Random(seed)
-        self.min_sep = 9.9
+        self._rng = random.Random(seed)  # 구간 흔들림용 난수
+        self.min_sep = 9.9  # 초기값은 충분히 큰 거리(m)
         self.close_time = 0.0
         self.stall30 = 0
         # [수정 2026-11-18] W7: 계획에 없는 정지 30초(판정), 의도된 대기 30초
@@ -179,9 +200,10 @@ class MockFleet(FleetIO):
         # [수정 2026-11-18] W10: 구간 출발 지연(실행 모델의 overhead)으로 서
         # 있던 시간 합계(초, 로봇 전체)
         self.start_delay_sum = 0.0
+        # 로봇별 (서 있는 이유, 이어진 시간(초))
         self._stand: dict[str, tuple[str, float]] = {}
         self.plan_fail_run = 0
-        self._fail_run: dict[str, int] = {}
+        self._fail_run: dict[str, int] = {}  # 로봇별 PLAN_FAIL 연속 횟수
         # [수정 2026-11-18] W4: 로봇별 진행 중인 실패 묶음 [목적지, 첫 시각,
         # 마지막 시각]과 20초를 넘은 묶음 목록 (로봇, 목적지, 첫, 마지막)
         self._fail_open: dict[str, list] = {}
@@ -190,10 +212,18 @@ class MockFleet(FleetIO):
         self._eta_open: dict[str, tuple[str, float, float]] = {}
         self.eta_ratios: list[float] = []
         self.fail_long: list[tuple[str, str, float, float]] = []
-        self._still: dict[str, float] = {}
+        self._still: dict[str, float] = {}  # 로봇별 임무 중 정지 시간(초)
 
     def place(self, rid: str, node: str) -> None:
-        """서 있는 로봇을 노드 위에 놓고 관제에 바로 알림."""
+        """서 있는 로봇을 노드 위에 놓고 관제에 바로 알림.
+
+        replay_run 이 실험 중 손으로 옮긴 로봇을 실제 출발 노드에 다시
+        놓을 때 씀.
+
+        Args:
+            rid: 로봇 이름.
+            node: 놓을 노드 이름.
+        """
         bot = self.bots[rid]
         bot.x, bot.y = self.core.graph.nodes[node]
         self.core.on_robot_status(
@@ -204,11 +234,22 @@ class MockFleet(FleetIO):
     def send_route(
         self, robot_id, task_id, plan_version, mode, visit_id, steps
     ):
-        """경로를 받음(NavigateRoute 목표에 해당)."""
+        """경로를 받음(NavigateRoute 목표에 해당).
+
+        Args:
+            robot_id: 로봇 이름.
+            task_id: 임무 id(모의 로봇은 쓰지 않음).
+            plan_version: 경로 번호. 허가는 이 번호가 같을 때만 받음.
+            mode: 구간 방식(NORMAL·GUIDE·YIELD).
+            visit_id: 방문 id(모의 로봇은 쓰지 않음).
+            steps: 관제의 Step 목록(node 만 씀).
+        """
         bot = self.bots[robot_id]
         nodes = self.core.graph.nodes
         bot.route = [(s.node,) + tuple(nodes[s.node]) for s in steps]
         bot.pv, bot.granted, bot.seg, bot.mode = plan_version, 0, None, mode
+        # 이미 첫 노드에 서 있으면 첫 노드 도착(0)으로 치고, 아니면 -1 로
+        # 두어 허가 없이 첫 노드까지 먼저 감(_move)
         first = bot.route[0]
         at_start = math.hypot(bot.x - first[1], bot.y - first[2]) < 1e-3
         bot.reached = 0 if at_start else -1
@@ -217,7 +258,16 @@ class MockFleet(FleetIO):
             self.accepted.append((robot_id, plan_version))
 
     def grant(self, robot_id, task_id, plan_version, index):
-        """통행 허가를 받음."""
+        """통행 허가를 받음.
+
+        다른 경로 번호의 허가는 버림(옛 계획의 허가 무시).
+
+        Args:
+            robot_id: 로봇 이름.
+            task_id: 임무 id(쓰지 않음).
+            plan_version: 허가가 속한 경로 번호.
+            index: 여기까지 가도 되는 경로 인덱스.
+        """
         bot = self.bots[robot_id]
         if plan_version == bot.pv:
             bot.granted = index
@@ -230,7 +280,15 @@ class MockFleet(FleetIO):
         """팔 작업 취소(모의 팔은 시간만 재므로 할 일 없음)."""
 
     def arm_job(self, arm_id, task_id, job, duration, params):
-        """팔 작업: duration 초 뒤에 성공으로 끝남."""
+        """팔 작업: duration 초 뒤에 성공으로 끝남.
+
+        Args:
+            arm_id: 팔 id(로봇 이름 또는 조리 팔).
+            task_id: 임무 id.
+            job: 작업 이름(모의에서는 쓰지 않음).
+            duration: 작업 시간(초).
+            params: 작업 인자(모의에서는 쓰지 않음).
+        """
         self.arm.append((self.t + duration, arm_id, task_id))
 
     def task_event(self, ev):
@@ -238,12 +296,18 @@ class MockFleet(FleetIO):
         self.task_events.append(ev)
 
     def log(self, event, **fields):
-        """관제 로그를 시각과 함께 모으고 PLAN_FAIL 연속 횟수를 셈."""
+        """관제 로그를 시각과 함께 모으고 PLAN_FAIL 연속 횟수를 셈.
+
+        Args:
+            event: 이벤트 이름(PLAN, PLAN_FAIL, ZONE_ENTER 등).
+            **fields: 로그 열. robot_id, task_id, zone_id, result, reason
+                만 남김.
+        """
         row = {
             k: fields.get(k, '')
             for k in ('robot_id', 'task_id', 'zone_id', 'result', 'reason')
         }
-        row.update(t=self.t, event=event)
+        row.update(t=self.t, event=event)  # 모의 시각(초)과 이벤트 이름
         self.events.append(row)
         rid = row['robot_id']
         self._track_eta(event, rid, row)
@@ -272,6 +336,9 @@ class MockFleet(FleetIO):
 
     def _track_eta(self, event: str, rid: str, row: dict) -> None:
         """PLAN 의 ETA 와 목적지 도착까지의 실제 시간을 맞춰 봄."""
+        # 첫 PLAN 의 (목적지, 시각, ETA)를 열어 두고, 목적지가 바뀐
+        # REPLAN 이면 버림. 그 목적지에 ZONE_ENTER 하면 비율을 남김
+        # (ETA 1초 미만은 비율이 튀므로 뺌)
         if not rid:
             return
         if event == 'PLAN' and 'eta=' in row['reason']:
@@ -304,18 +371,31 @@ class MockFleet(FleetIO):
 
     # ---- 실행
     def report(self, bot: Bot) -> None:
-        """로봇 상태 보고(RobotStatus 에 해당)."""
+        """로봇 상태 보고(RobotStatus 에 해당).
+
+        배터리는 100, 충전 아님으로 고정함.
+
+        Args:
+            bot: 보고할 모의 로봇.
+        """
         state = 'MOVING' if bot.route else 'IDLE'
         self.core.on_robot_status(
             bot.id, bot.x, bot.y, bot.yaw, 100.0, False, state
         )
 
     def _move(self, bot: Bot) -> None:
+        """로봇을 한 단계(dt)만큼 다음 노드 쪽으로 움직임.
+
+        허가받은 인덱스까지만 감. 첫 노드(reached == -1)는 허가 없이 감.
+        구간을 새로 시작하면 흔들림 배율을 뽑고 출발 지연(hold)부터 씀.
+        노드에 닿으면 관제에 진행(on_route_progress)을 알림.
+        """
         tgt = bot.reached + 1
-        if tgt >= len(bot.route):
+        if tgt >= len(bot.route):  # 경로 끝
             return
-        if tgt > bot.granted and bot.reached != -1:
+        if tgt > bot.granted and bot.reached != -1:  # 허가 대기
             return
+        # 새 구간 시작: 흔들림 배율과 출발 지연을 정함
         if bot.seg != (bot.pv, tgt):
             jitter = self.model.jitter
             bot.factor = (
@@ -325,6 +405,7 @@ class MockFleet(FleetIO):
             )
             bot.seg = (bot.pv, tgt)
             bot.hold = self.model.overhead * bot.factor
+        # 출발 지연 중이면 이번 단계는 서 있음
         if bot.hold > 0.0:
             bot.hold -= self.dt
             bot.delayed = True
@@ -332,11 +413,14 @@ class MockFleet(FleetIO):
         _, tx, ty = bot.route[tgt]
         dist = math.hypot(tx - bot.x, ty - bot.y)
         step = self.model.speed_of(bot.mode) / bot.factor * self.dt
+        # 이번 단계에 닿지 못하면 목표 쪽으로 step 만큼만 감
         if dist > step:
             bot.yaw = math.atan2(ty - bot.y, tx - bot.x)
             bot.x += (tx - bot.x) / dist * step
             bot.y += (ty - bot.y) / dist * step
             return
+        # 노드 도착. 진행 알림 중 관제가 새 경로를 보냈을 수 있어(pv
+        # 바뀜), 같은 경로일 때만 경로를 끝냄
         bot.x, bot.y, bot.reached = tx, ty, tgt
         pv, last = bot.pv, tgt == len(bot.route) - 1
         self.core.on_route_progress(bot.id, pv, tgt)
@@ -345,12 +429,15 @@ class MockFleet(FleetIO):
 
     def move_robots(self) -> None:
         """수락 알림, 팔 결과, 로봇 이동·보고, 지표 갱신을 한 번 함."""
+        # 경로 수락(첫 노드에 이미 있음) 알림
         for rid, pv in self.accepted:
             self.core.on_route_progress(rid, pv, 0)
         self.accepted = []
+        # 시간이 다 된 팔 작업은 성공으로 알림
         for done in [x for x in self.arm if x[0] <= self.t]:
             self.arm.remove(done)
             self.core.on_arm_result(done[1], done[2], True)
+        # 이동 전 위치(정지 판정용)
         before = {b.id: (b.x, b.y) for b in self.bots.values()}
         for bot in self.bots.values():
             bot.delayed = False
@@ -359,12 +446,15 @@ class MockFleet(FleetIO):
             if bot.delayed:
                 self.start_delay_sum += self.dt
             self.report(bot)
+        # 로봇 간 최소 거리와 SAFE_DIST 미만으로 있던 시간
         closest = 9.9
         for a, b in itertools.combinations(self.bots.values(), 2):
             closest = min(closest, math.hypot(a.x - b.x, a.y - b.y))
         self.min_sep = min(self.min_sep, closest)
         if closest < SAFE_DIST - 1e-6:
             self.close_time += self.dt
+        # 진행 중인 임무가 있는데 움직이지 않은 로봇의 정지 시간을 셈.
+        # 움직였거나 임무가 없으면 0 으로 되돌림
         for bot in self.bots.values():
             task = self.core.robots[bot.id].task
             moved = math.dist(before[bot.id], (bot.x, bot.y)) > 1e-6

@@ -55,6 +55,8 @@ from .restaurant import Restaurant
 from .restaurant import RestaurantIO
 from .schedulers import SCHEDULERS
 
+# 가상 매장 손님 대본. 키가 --scenario 이름이고, 한 줄이 손님 한 팀
+# (도착 시각은 seed 가 0 이 아니면 _run_full 이 ±4초 흔듦)
 # (arrival time s, party size, [(menu, qty)], seconds from seated to order, seconds from last dish to leaving)
 SCENARIOS = {
     'normal': [(0, 2, [('FRIED', 1)], 8, 25), (20, 4, [('FRIED_RICE', 2), ('SEASONED', 1)], 10, 30),
@@ -64,24 +66,25 @@ SCENARIOS = {
     'bottleneck': [(0, 2, [('FRIED_RICE', 2)], 4, 30), (2, 2, [('FRIED_RICE', 2)], 4, 30), (4, 4, [('FRIED_RICE', 2), ('FRIED', 1)], 4, 30),
                    (34, 2, [('FRIED_RICE', 1)], 4, 20), (36, 4, [('FRIED_RICE', 2)], 4, 20), (38, 2, [('FRIED_RICE', 2)], 4, 20),
                    (100, 2, [('FRIED_RICE', 1)], 4, 20), (102, 2, [('SEASONED', 1)], 4, 20)],
+    # 15초 안에 6팀이 몰리고 70·75초, 140·145초에 두 팀씩 더 옴
     'rush': [(0, 2, [('FRIED_RICE', 1)], 5, 20), (3, 4, [('FRIED_RICE', 2)], 5, 25), (6, 2, [('FRIED', 1)], 5, 20),
              (9, 4, [('FRIED_RICE', 1), ('SEASONED', 1)], 5, 25), (12, 2, [('FRIED_RICE', 2)], 5, 20),
              (15, 2, [('FRIED_RICE', 1)], 5, 20), (70, 2, [('FRIED_RICE', 1)], 5, 20), (75, 4, [('FRIED', 1), ('FRIED_RICE', 2)], 5, 20),
              (140, 2, [('FRIED_RICE', 1)], 5, 20), (145, 2, [('SEASONED', 1)], 5, 20)],
 }
 # [수정 2026-11-18] W3: 실측 지도 작업 부하(가상 매장 손님 대본이 아님)
-MOVES = 'moves'
-MOVES_PER_ROBOT = 8
+MOVES = 'moves'  # --scenario 이름(실측 지도 이동 명령)
+MOVES_PER_ROBOT = 8  # 로봇마다 보낼 이동 명령 수
 # [수정 2026-11-18] W8-2: 거절된 이동 명령을 다시 시도하는 횟수(1초 간격)
 MOVE_RETRIES = 60
 # [수정 2026-11-18] W3: --check 통과 기준
 # (작업 지시서 0장 중 모의로 볼 수 있는 것)
-CHECK_MIN_SEP = 0.155
+CHECK_MIN_SEP = 0.155  # 최소 간격 기준(m), layout.SAFE_DIST 와 같은 값
 # [수정 2026-11-18] W4: PLAN_FAIL 연속 3회 기준(CHECK_FAIL_RUN)을 지우고
 # 같은 목적지 계획 실패 20초 넘는 묶음 0건 기준으로 바꿈(mock_fleet 참고)
 
 
-# [수정 2026-11-18] W3: SimRobot 과 이동 코드는 mock_fleet 으로 옮겨 삭제함
+# 모의 로봇과 이동 코드는 mock_fleet(MockFleet)에 있음(W3)
 class OfflineWorld(MockFleet, RestaurantIO):
     """가상 매장 손님 대본을 관제 코어 + 모의 로봇으로 실행함."""
 
@@ -106,6 +109,26 @@ class OfflineWorld(MockFleet, RestaurantIO):
         plan_guide_speed=None,
         plan_speed_factor=None,
     ):
+        """매장 대본 실행 환경을 만든다.
+
+        Args:
+            scheduler: 스케줄러 이름(SCHEDULERS).
+            planner: 플래너 이름(PLANNERS).
+            scenario: 손님 대본(SCENARIOS 의 값 형식).
+            dt: 한 단계의 시간(초).
+            speed: 관제 기본 일반 속도이자 ideal 모델의 주행 속도(m/s).
+            guide_speed: 관제 기본 안내 속도(m/s).
+            cook_scale: 조리 시간 축소 배율(cook_time_scale).
+            verbose: 로그를 한 줄씩 출력할지.
+            standby: 임무 없는 로봇의 대기 위치 사용(use_standby).
+            robots: 로봇 대수(pinky1..N).
+            model: 실행 시간 모델. None 이면 ideal(지연 0, speed).
+            seed: 흔들림·관제 난수 씨앗.
+            plan_speed: 계획의 일반 속도(m/s). None 이면 speed.
+            plan_overhead: 계획의 구간 지연(초). None 이면 관제 기본값.
+            plan_guide_speed: 계획의 안내 속도(m/s). None 이면 guide_speed.
+            plan_speed_factor: 계획 속도 배율. None 이면 관제 기본값.
+        """
         model = model or TimeModel('ideal', speed, 0.0, guide_speed=guide_speed)
         # [수정 2026-11-18] W10: 계획 속도는 배율 대신 FleetCore 의 speed·
         # guide_speed 로 넘김(_plan_args)
@@ -124,15 +147,24 @@ class OfflineWorld(MockFleet, RestaurantIO):
             **core_args,
         )
         self.verbose = verbose
+        # 매장 업무 상태(central_control 과 같은 코드)
         self.rest = Restaurant(self)
+        # 할 일 (시각, 종류 arrive·order·leave, 대본 줄 또는 visit id)
         self.todo = [(a[0], 'arrive', a) for a in scenario]
         self.plan_of = {}  # visit -> scenario row
+        # 서비스 시간(초): 접수->착석, 주문->전달, 조리 완료->전달, 테이블
+        # 회전(TABLE_AVAILABLE 의 turnaround), 접수 거절 수
         self.stats = dict(
             seat=[], deliver=[], ready_to_deliver=[], turnaround=[], rejected=0
         )
 
     def log(self, event, **f):
-        """관제·매장 로그. 서비스 시간을 모음."""
+        """관제·매장 로그. 서비스 시간을 모음.
+
+        Args:
+            event: 이벤트 이름.
+            **f: 로그 열. 서비스 시간은 reason 의 'key=값'에서 읽음.
+        """
         super().log(event, **f)
         if self.verbose:
             print(
@@ -153,12 +185,26 @@ class OfflineWorld(MockFleet, RestaurantIO):
 
     # ---- RestaurantIO
     def submit_task(self, cb, **kw):
-        """매장 -> 관제 임무 요청."""
+        """매장 -> 관제 임무 요청.
+
+        Args:
+            cb: 결과를 받을 콜백(FleetCore.submit_task 의 반환값).
+            **kw: 임무 인자. task_type 은 FleetCore 의 type 으로 바꿔 넘김.
+        """
         kw['type'] = kw.pop('task_type')
         cb(self.core.submit_task(**kw))
 
     def fleet_command(self, cmd, target, arg=''):
-        """매장 -> 관제 명령."""
+        """매장 -> 관제 명령.
+
+        Args:
+            cmd: 명령 이름.
+            target: 대상(로봇 이름 등).
+            arg: 명령 인자.
+
+        Returns:
+            FleetCore.command 의 반환값((성공 여부, 메시지)).
+        """
         return self.core.command(cmd, target, arg)
 
     def persist(self, table, row):
@@ -173,6 +219,7 @@ class OfflineWorld(MockFleet, RestaurantIO):
         """한 단계(dt 초): 손님 대본, 로봇, 매장, 관제 순서."""
         self.t += self.dt
         t = self.t
+        # 시각이 된 손님 행동: 도착(접수), 주문, 이용 종료
         for item in [x for x in self.todo if x[0] <= t]:
             self.todo.remove(item)
             _, kind, a = item
@@ -188,6 +235,8 @@ class OfflineWorld(MockFleet, RestaurantIO):
         self.move_robots()
         self.rest.tick(t)
         self.core.tick(t)
+        # 임무 이벤트를 매장에 넘기고, 안내 도착이면 주문을, 마지막 음식
+        # 전달이면 떠날 시각을 대본 값만큼 뒤에 예약함
         for ev in self.task_events:
             self.rest.on_task_event(ev)
             if ev['task_type'] == 'GUIDE' and ev['state'] == 'ARRIVED':
@@ -303,7 +352,27 @@ def _run_full(
     plan_guide_speed=None,
     plan_speed_factor=None,
 ):
-    random.seed(seed)
+    """매장 대본 한 조합·한 씨앗을 실행함.
+
+    Args:
+        scheduler: 스케줄러 이름.
+        planner: 플래너 이름.
+        scenario: SCENARIOS 의 키.
+        max_t: 최대 모의 시간(초).
+        verbose: 로그를 출력할지.
+        standby: 임무 없는 로봇의 대기 위치 사용.
+        seed: 도착 시각·흔들림·관제 난수 씨앗(0 이면 대본 그대로).
+        robots: 로봇 대수.
+        model: 실행 시간 모델(None 이면 ideal).
+        plan_speed: 계획의 일반 속도(m/s).
+        plan_overhead: 계획의 구간 지연(초).
+        plan_guide_speed: 계획의 안내 속도(m/s).
+        plan_speed_factor: 계획 속도 배율.
+
+    Returns:
+        (지표 dict, 주문->전달 시간 목록).
+    """
+    random.seed(seed)  # 대본의 도착 시각 흔들림용(전역 random)
     script = SCENARIOS[scenario]
     if seed:  # same guests, arrival times shifted a little per seed
         script = sorted(
@@ -327,7 +396,7 @@ def _run_full(
     # 않고 끝냄(보류 수는 suspended 로 셈)
     while w.t < max_t and not (w.t > 5 and w.finished()) and not w.suspended:
         w.step()
-    m, s = w.core.m, w.stats
+    m, s = w.core.m, w.stats  # 관제 코어 지표, 매장 서비스 시간
 
     def avg(a):
         return round(st.mean(a), 1) if a else float('nan')
@@ -375,7 +444,13 @@ def run(
     plan_guide_speed=None,
     plan_speed_factor=None,
 ):
-    """한 조합·한 씨앗을 실행해 지표 한 줄을 돌려줌."""
+    """한 조합·한 씨앗을 실행해 지표 한 줄을 돌려줌.
+
+    인자는 _run_full 과 같음(scripts/bench_all.py 가 부름).
+
+    Returns:
+        지표 dict(COLS + EXTRA_COLS 열). 전달 시간 목록은 버림.
+    """
     # [수정 2026-11-18] W10: 안내 속도·계획 속도 배율 전달
     return _run_full(
         scheduler,
@@ -398,6 +473,8 @@ def run(
 def _moves_plan(graph, rids: list[str], seed: int, per_robot: int) -> dict:
     """로봇마다 씨앗으로 정한 목적지 목록(연속으로 같은 노드는 없음)."""
     rng = random.Random(seed * 7919 + 1)
+    # 이름에 '_' 가 없는 노드만 목적지 후보(D1_IN·D1_STOP 같은 보조
+    # 노드 제외)
     major = sorted(n for n in graph.nodes if '_' not in n)
     plan = {}
     for rid in rids:
@@ -413,7 +490,8 @@ def _moves_plan(graph, rids: list[str], seed: int, per_robot: int) -> dict:
 
 def _free_time(graph, model: TimeModel, src: str, dst: str) -> float:
     """막힘 없이 src -> dst 를 갈 때의 시간(빈 지도 최단 경로, 흔들림 없음)."""
-    dist = graph.sp_from(dst)
+    dist = graph.sp_from(dst)  # 노드 -> dst 최단 거리
+    # 남은 거리가 가장 짧은 이웃을 따라가며 구간 시간을 더함
     node, total = src, 0.0
     while node != dst:
         nxt, d = min(graph.adj[node], key=lambda e: e[1] + dist.get(e[0], 1e18))
@@ -463,14 +541,17 @@ def run_moves(
     w = MockFleet(rids, model, dt=0.1, seed=seed, **core_args)
     graph = w.core.graph
     plan = _moves_plan(graph, rids, seed, per_robot)
-    for _ in range(3):
+    for _ in range(3):  # 첫 상태 보고가 관제에 들어가게 몇 단계 진행
         w.step()
     rng = random.Random(seed * 7919 + 2)
+    # 로봇별 다음 명령 시각(처음에는 0~2초 흔듦)과 거절 뒤 재시도 횟수
     next_at = {rid: w.t + rng.uniform(0.0, 2.0) for rid in rids}
     tries = {rid: 0 for rid in rids}
+    # sent: 받아들여진 명령 기록, rejected: 끝내 건너뛴 명령 수
     sent, rejected = [], 0
     # [수정 2026-11-18] W8-2: 관제가 거절한 시도 수(이미 그 노드인 경우 제외)
     refused = 0
+    # 한가한 로봇(임무·경로·예정 없음)에만 다음 이동 명령을 보냄
     while w.t < max_t:
         w.step()
         for rid in rids:
@@ -514,6 +595,7 @@ def run_moves(
             break
         if w.suspended:                    # [수정 2026-11-18] W8-3: 보류로 끝남
             break
+    # 명령별 소요 / 막힘 없는 소요 비율과 초과 대기 시간
     done = {e['task_id']: e['t'] for e in w.events if e['event'] == 'TASK_DONE'}
     ratios, waits = [], []
     for c in sent:
@@ -550,6 +632,7 @@ def run_moves(
     return row, ratios
 
 
+# 매장 대본의 표·--csv-mean 열(이 순서로 출력)
 COLS = [
     'scheduler',
     'planner',
@@ -620,6 +703,7 @@ EXTRA_COLS = [
 
 def _job(args):
     """병렬 실행 한 건: (조합, 씨앗) -> (지표, 목록)."""
+    # args 는 main 의 jobs 튜플 순서와 같음
     # [수정 2026-11-18] W6: 계획 구간 지연(plan_overhead) 추가
     # [수정 2026-11-18] W10: 안내 속도·계획 속도 배율 추가
     (scenario, s, p, seed, robots, model, plan_speed, standby, max_t,
@@ -693,7 +777,11 @@ def _spread(values: list[float]) -> str:
 
 
 def _model_of(a) -> TimeModel:
-    """명령행 인자에서 실행 시간 모델을 만듦."""
+    """명령행 인자에서 실행 시간 모델을 만듦.
+
+    measured 는 11-16 실기기 값, ideal 은 지연 0·0.08 m/s 에서 시작하고
+    --exec-speed, --overhead, --jitter 로 덮어씀.
+    """
     if a.time_model == 'measured':
         model = TimeModel(
             'measured', MEASURED_SPEED, MEASURED_OVERHEAD, guide_speed=0.05
@@ -712,8 +800,6 @@ def _model_of(a) -> TimeModel:
 
 def main():
     """명령행 진입점."""
-    # [수정 2026-11-18] W8-1: 해시 씨앗 재실행(fix_hash_seed) 삭제. 관제
-    # 코어가 정렬된 순서로 판단함
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -811,16 +897,19 @@ def main():
     )
     ap.add_argument('--jobs', type=int, default=1, help='parallel processes')
     a = ap.parse_args()
+    # 이동 명령 대본은 실측 지도가 필요함. 지도는 환경 변수로 고름
     if a.scenario == MOVES:
         if not a.map_id:
             ap.error('--scenario moves needs --map-id (a measured map)')
         os.environ['FRYBOT_MAP_ID'] = a.map_id
     model = _model_of(a)
     max_t = a.max_t or (1500.0 if a.time_model == 'ideal' else 3000.0)
+    # (스케줄러, 플래너) 조합. 기준선이 목록에 없으면 덧붙여 함께 돌림
     pairs = [(s, p) for s in a.schedulers for p in a.planners]
     base = tuple(a.baseline.split()) if a.baseline else None
     if base and base not in pairs:
         pairs.append(base)
+    # 조합 x 씨앗마다 한 건(_job 의 인자 순서)
     jobs = [
         (
             a.scenario,
@@ -846,12 +935,14 @@ def main():
             out = pool.map(_job, jobs)
     else:
         out = [_job(j) for j in jobs]
+    # raw: 조합별 씨앗 행, lists: 조합별 전달 시간(또는 명령 소요비) 모음
     raw, lists = {}, {}
     for job, (row, values) in zip(jobs, out, strict=True):
         row['seed'] = job[3]
         raw.setdefault((job[1], job[2]), []).append(row)
         lists.setdefault((job[1], job[2]), []).extend(values)
     cols = MOVE_COLS if a.scenario == MOVES else COLS
+    # 조합별 평균 행(min_sep 은 최솟값, NaN 은 뺌)
     rows = []
     for (s, p), rs in raw.items():
         row = dict(
@@ -874,6 +965,7 @@ def main():
                 else float('nan')
             )
         rows.append(row)
+    # 열 너비(표 출력용)
     w = {c: max(len(c), *(len(str(r[c])) for r in rows)) for c in cols}
     _factor = 0.9 if a.plan_speed_factor is None else a.plan_speed_factor
     print(

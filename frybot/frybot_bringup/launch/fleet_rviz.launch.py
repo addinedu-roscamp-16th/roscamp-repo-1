@@ -27,7 +27,7 @@ def setup(context) -> list:
         fleet_rviz 노드와 rviz2 노드.
     """
     arg = LaunchConfiguration('robots').perform(context)
-    robots = pick_robots(arg, registered(''))
+    robots = pick_robots(arg, registered(''))  # 등록부는 기본 위치만 봄
     # [수정 2026-11-18] P2: RViz 설정 이름 fleet_real.rviz -> fleet.rviz
     # [수정 2026-11-19] rviz_displays:=false 면 Displays 창 없이 띄움(녹화용)
     hide = LaunchConfiguration('rviz_displays').perform(context) == 'false'
@@ -44,6 +44,11 @@ def setup(context) -> list:
 
 
 def generate_launch_description():
+    """robots, rviz_displays, map_id 인자를 선언하고 setup 을 붙인다.
+
+    Returns:
+        LaunchDescription.
+    """
     return LaunchDescription([
         DeclareLaunchArgument('robots', default_value=''),
         DeclareLaunchArgument('rviz_displays', default_value='true'),

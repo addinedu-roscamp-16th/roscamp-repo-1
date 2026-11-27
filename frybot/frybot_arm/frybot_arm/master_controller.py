@@ -5,7 +5,9 @@ SW 아키텍처 v016: Task Manager --ROS2--> FrybotArm Master Controller
 
 Task Manager 는 조리 팔 작업을 모두 /frybot_arm/arm_job 으로 보내고,
 Master Controller 가 목표의 arm_id 를 보고 해당 팔의 /<arm_id>/arm_job 으로
-넘깁니다. 피드백·결과·취소는 그대로 전달합니다. 팔 A/B 사이의 순서와 자원
+넘깁니다. 피드백·결과는 그대로 전달하고 취소 요청도 넘기지만, 지금
+arm_controller(대역)가 취소를 받지 않아 작업은 끝까지 갑니다.
+팔 A/B 사이의 순서와 자원
 (튀김기, 웍) 조율은 지금처럼 Task Manager(fleet_core 의 조리 셀 조율)가
 하며, 여기서는 하지 않습니다.
 """
@@ -24,6 +26,7 @@ from frybot_interfaces.action import ArmJob
 
 from frybot_arm import ARM_IDS, MASTER_ACTION
 
+# 하위 팔의 목표 수락·결과를 기다릴 때 확인 간격(초)
 _POLL_SEC = 0.02
 
 
@@ -34,13 +37,16 @@ class ArmMasterController(Node):
         # [수정 2026-11-18] P2: 노드 이름을 실행 파일과 같게
         super().__init__('master_controller')
         p = self.declare_parameter
+        # arm_ids: 넘길 팔 목록. server_wait_sec: 팔 액션 서버를 기다릴 시간
         arm_ids = p('arm_ids', list(ARM_IDS)).value
         self._server_wait = p('server_wait_sec', 2.0).value
         cb = ReentrantCallbackGroup()
+        # 팔 이름 -> 그 팔의 /<arm_id>/arm_job 액션 클라이언트
         self._arms = {
             arm_id: ActionClient(self, ArmJob, f'/{arm_id}/arm_job',
                                  callback_group=cb)
             for arm_id in arm_ids}
+        # Task Manager 가 보내는 /frybot_arm/arm_job. 취소 요청은 받아 팔에 넘김
         ActionServer(self, ArmJob, MASTER_ACTION,
                      execute_callback=self._execute,
                      goal_callback=self._on_goal,
@@ -79,6 +85,7 @@ class ArmMasterController(Node):
         if not child.accepted:
             gh.abort()
             return ArmJob.Result(success=False, reason='REJECTED')
+        # 결과를 기다리며, 취소 요청이 오면 팔 쪽 목표에 한 번 넘김
         result_future = child.get_result_async()
         cancel_sent = False
         while not result_future.done():
@@ -86,6 +93,7 @@ class ArmMasterController(Node):
                 child.cancel_goal_async()
                 cancel_sent = True
             time.sleep(_POLL_SEC)
+        # 팔의 결과 상태대로 이 목표도 끝냄(취소, 성공, 그 밖은 중단)
         wrapped = result_future.result()
         result = wrapped.result
         if wrapped.status == GoalStatus.STATUS_CANCELED:
@@ -97,6 +105,7 @@ class ArmMasterController(Node):
             gh.abort()
         return result
 
+    # 팔의 피드백을 Task Manager 쪽 목표로 그대로 전달(끝난 목표는 버림)
     @staticmethod
     def _feedback(gh: ServerGoalHandle, fb) -> None:
         if gh.is_active:
@@ -104,6 +113,7 @@ class ArmMasterController(Node):
 
 
 def main() -> None:
+    """Master Controller 노드를 8 스레드 실행기로 돌린다."""
     rclpy.init()
     node = ArmMasterController()
     # 팔마다 실행 중인 작업이 스레드 하나를 잡고 있음
