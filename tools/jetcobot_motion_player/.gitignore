@@ -1,0 +1,13 @@
+__pycache__/
+.ipynb_checkpoints/
+# 로봇 접속 키는 저장소에 올리지 않음 (관리자가 jetcobot-team.key 를 따로 전달)
+robot_link/team/id_*
+robot_link/team/known_hosts
+robot_link/team/ip_cache.json
+*.key
+player/access_code.txt
+motions_trash/
+# 실기기 접속 정보 (개발표준: 저장소에 올리지 않음). 형식은 robot_link/team/robots.example.json
+robot_link/team/robots.json
+robot_link/team/front_pose.json
+poses.json
