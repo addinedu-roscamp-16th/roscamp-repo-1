@@ -24,6 +24,7 @@ FryBot의 프론트엔드, 서버·DB, ROS 2 소스에 적용하는 팀 개발�
 | `backend/api/`, `backend/db/` | Python 3.12 · FastAPI · MySQL 8.4. 기존 조회·음성 명령과 SQL 초기화·시드·DB 검증 스크립트가 있습니다. |
 | `frybot/` | ROS 2 Jazzy. `frybot_control`은 관제·임무 관리, `frybot_interfaces`는 메시지·서비스·액션, `frybot_bringup`은 시뮬레이션·장비 기동을 담당합니다. |
 | `design/` | 화면과 설계 자료. |
+| `tools/` | 개발·시험용 도구. `jetcobot_motion_player/`는 로봇팔 동작 공유·조작·재생 웹 도구(Python 표준 라이브러리 서버, 브라우저 3D, RViz)로, 서비스 흐름(React → FastAPI → ROS 2)과 별개로 실행합니다. |
 
 이주헌 님의 ROS 코드에는 **시뮬레이션용 로컬 SQLite와 자체 웹 서버**가 있습니다. FastAPI의 MySQL과 별도 데이터 저장소이며, 자체 웹의 `/api/checkin`·`/api/order` 경로는 React가 호출하는 `/api/visits`·`/api/orders`와 다릅니다. 시뮬레이션 자체 웹으로 로봇 동작을 먼저 독립 검증하고, React 연동 시 상태 갱신 책임과 경로를 확인합니다. [시스템 아키텍처](https://oneteam1.atlassian.net/wiki/spaces/1/pages/786434) · [ROS 자체 웹 구현](https://github.com/addinedu-roscamp-16th/roscamp-repo-1/blob/Juheon_Lee/frybot/frybot_web/frybot_web/web_service_node.py)
 

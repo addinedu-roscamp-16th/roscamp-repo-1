@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>젯코봇 동작 플레이어</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --line: #e3e6eb; --text: #1d2330; --muted: #687385;
+    --accent: #2f6fed; --accent-soft: #e8efff; --ok: #1a7f37; --warn: #b26b00; --stop: #d1242f;
+    --c1: #2f6fed; --c2: #e8710a; --c3: #1a9e5c; --c4: #c2185b; --c5: #7b4ddb; --c6: #8a6d3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --panel: #1c2027; --line: #2c323c; --text: #e6e9ef; --muted: #98a2b3;
+      --accent: #6b9bff; --accent-soft: #1f2b45; --ok: #4cc276; --warn: #e0a33a; --stop: #ff5c5c;
+      --c1: #6b9bff; --c2: #ff9d4d; --c3: #4cc276; --c4: #f06292; --c5: #a98bff; --c6: #c9a56b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, "Noto Sans KR", "NanumGothic", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 18px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; }
+  .dot.on { background: var(--ok); } .dot.mid { background: var(--warn); }
+  .grow { flex: 1; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 6px 12px; border-radius: 7px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.stop { background: var(--stop); border-color: var(--stop); color: #fff; font-weight: 600; }
+  select, input, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; }
+  main { display: grid; grid-template-columns: 320px 1fr; gap: 14px; padding: 14px 18px; max-width: 1400px; margin: 0 auto; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .list h2, .detail h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0; padding: 12px 14px 6px; }
+  .item { display: flex; gap: 8px; align-items: flex-start; padding: 8px 14px; cursor: pointer; border-left: 3px solid transparent; }
+  .item:hover { background: var(--accent-soft); }
+  .item.sel { background: var(--accent-soft); border-left-color: var(--accent); }
+  .item input { margin-top: 4px; }
+  .item .nm { font-weight: 500; }
+  .item .sub { color: var(--muted); font-size: 12px; }
+  .badge { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); margin-left: 4px; white-space: nowrap; }
+  .badge.t { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+  .detail { padding: 4px 18px 18px; }
+  .detail h3 { font-size: 19px; margin: 10px 0 2px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+  .legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 4px; border-radius: 2px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  .box { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 12px; }
+  .box h4 { margin: 0 0 4px; font-size: 14px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  #log { font: 12px/1.45 ui-monospace, "D2Coding", monospace; height: 150px; overflow: auto; padding: 8px 12px; white-space: pre-wrap; margin: 0 18px 18px; max-width: 1364px; }
+  #log .err { color: var(--stop); } #log .ok { color: var(--ok); } #log .send { color: var(--accent); } #log .code { color: var(--muted); }
+  .warn { background: color-mix(in srgb, var(--warn) 14%, transparent); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-top: 10px; }
+  .dlbtn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; font-weight: 600;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); text-decoration: none; }
+  .dlbtn:hover { background: var(--accent); color: #fff; }
+  .dlbtn span { font-weight: 400; font-size: 12px; opacity: .8; }
+  .tabs { display: flex; gap: 4px; padding: 10px 18px 0; max-width: 1400px; margin: 0 auto; }
+  .tabs button { border-radius: 8px 8px 0 0; border-bottom: none; padding: 8px 18px; font-weight: 600; color: var(--muted); }
+  .tabs button.on { background: var(--panel); color: var(--text); border-color: var(--line); box-shadow: inset 0 3px 0 var(--accent); }
+  .ctl { display: grid; grid-template-columns: 340px 1fr; gap: 14px; padding: 0 18px 14px; max-width: 1400px; margin: 0 auto; }
+  .ctl .panel { padding: 14px 16px; }
+  .ctl h4 { margin: 0 0 8px; font-size: 14px; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btns button { padding: 9px 10px; }
+  .jg { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+  .jg label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .jg input[type=number] { width: 100%; }
+  .jg input[type=range] { width: 100%; }
+  .readout { font: 12px/1.6 ui-monospace, "D2Coding", monospace; background: var(--bg); border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
+  .readout th { text-align: left; font-weight: 600; padding-right: 4px; } .readout td { padding-left: 4px; }
+  .poses { max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
+  .poses div { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .poses div:last-child { border-bottom: none; }
+  .poses code { color: var(--muted); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .needbot:disabled { cursor: not-allowed; }
+  @media (max-width: 900px) { .ctl { grid-template-columns: 1fr; } .jg { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>젯코봇 동작 플레이어</h1>
+  <span><span class="dot" id="rdot"></span><span id="rstate">로봇 연결 안 됨</span></span>
+  <select id="host" title="로봇"></select>
+  <button id="bconn">연결</button>
+  <button id="bregOpen" title="처음 쓰는 로봇을 목록에 추가">＋ 로봇 등록</button>
+  <span class="grow"></span>
+  <span class="hint" id="share"></span>
+  <span class="hint">Esc = 정지</span>
+  <button class="stop" id="bstopTop">■ 정지</button>
+</header>
+
+<div class="panel" id="regbox" style="display:none;margin:14px auto 0;max-width:1364px;padding:12px 16px">
+  <b>새 로봇 등록</b> <span class="hint">· 로봇 비밀번호는 팀 키를 넣을 때 한 번만 쓰고 저장하지 않아요. 등록 후엔 비밀번호 없이 연결돼요.</span>
+  <div class="row">
+    <input id="regAlias" placeholder="이름 (예: jetcobot_ab12)" style="width:200px">
+    <input id="regIp" placeholder="IP (예: 192.168.0.40)" style="width:170px">
+    <input id="regUser" value="jetcobot" style="width:110px" title="로봇 사용자 이름">
+    <input id="regPw" type="password" placeholder="로봇 비밀번호" style="width:150px" autocomplete="new-password">
+    <button class="primary" id="breg">등록</button>
+    <button id="bregClose">닫기</button>
+  </div>
+  <div class="hint">로봇 이름은 보통 핫스팟 이름 끝 4자리로 (jetcobot_xxxx). IP 는 로봇 화면이나 공유기에서 확인. 로봇이 켜져 있고 같은 와이파이여야 해요.</div>
+</div>
+
+<nav class="tabs"><button id="tabBtnCtl" class="on">조작</button><button id="tabBtnMotion">애니메이션</button></nav>
+
+<div id="tabCtl" class="ctl">
+  <section style="display:flex;flex-direction:column;gap:14px">
+    <div class="panel">
+      <h4>기본</h4>
+      <div class="btns">
+        <button class="needbot" data-cmd="home">기본자세 [0,0,0,0,0,0]</button>
+        <button class="needbot" data-cmd="front" id="bFront">정면 대기</button>
+        <button class="needbot" data-cmd="state">현재 상태 읽기</button>
+        <button class="needbot" data-cmd="focus">서보 고정</button>
+        <button class="needbot" data-cmd="release" style="grid-column:span 2">서보 풀기 (손으로 움직이기)</button>
+      </div>
+      <div class="row"><label>속도 <input type="range" id="cspeed" min="1" max="100" value="20" style="width:150px"></label> <b id="cspeedv">20</b>
+        <label style="margin-left:auto"><input type="checkbox" id="live"> 실시간 상태 (1초)</label></div>
+      <div class="readout" id="readout">각도: -
+좌표: -</div>
+    </div>
+    <div class="panel">
+      <h4>그리퍼</h4>
+      <div class="row">
+        <button class="needbot" id="gOpen">열기</button>
+        <button class="needbot" id="gClose">닫기</button>
+        <input type="range" id="gval" min="0" max="100" value="100" style="flex:1"> <b id="gvalv" style="width:30px">100</b>
+        <button class="needbot" id="gApply">값 적용</button>
+      </div>
+      <div class="hint">0 = 닫힘, 100 = 열림 · 웍 공구를 단 로봇은 그리퍼가 없어요</div>
+    </div>
+    <div class="panel">
+      <h4>자세 기록 <span class="hint">· 팀 공용</span></h4>
+      <div class="row"><input id="poseName" placeholder="자세 이름 (예: 웍 위)" style="flex:1"><button class="needbot" id="bPoseSave">현재 자세 저장</button></div>
+      <div class="poses" id="poseList"></div>
+      <div class="row"><button id="bPoseCode">파이썬 코드로 복사</button><span class="hint">주피터에 붙여넣기용</span></div>
+      <div class="box" style="margin-top:10px">
+        <h4>자세 → 동작으로 저장</h4>
+        <div class="hint">위 목록에서 체크한 순서대로 이어요 (번호 표시). 저장하면 애니메이션 탭에서 RViz·실제 로봇 재생.</div>
+        <div class="row">
+          <label>자세 사이 <input type="number" id="pSeg" value="2" min="0.3" max="30" step="0.5" style="width:60px">초</label>
+          <label>머무름 <input type="number" id="pHold" value="0.5" min="0" max="10" step="0.5" style="width:60px">초</label>
+        </div>
+        <div class="row"><input id="pMotion" placeholder="새 동작 이름" style="flex:1"><button class="primary" id="bPoseMotion">동작으로 저장</button></div>
+        <div class="hint" id="pOrder"></div>
+      </div>
+    </div>
+  </section>
+  <section style="display:flex;flex-direction:column;gap:14px">
+    <div class="panel">
+      <h4>관절 각도 (°)</h4>
+      <div class="jg" id="angGrid"></div>
+      <div class="row">
+        <button class="needbot" id="aGet">현재값 가져오기</button>
+        <button class="needbot primary" id="aGo">각도로 이동</button>
+        <button class="needbot" id="aFront" title="이 로봇의 정면 대기 자세로 저장">이 값을 정면 대기로 저장</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>좌표 (mm, °)</h4>
+      <div class="jg" id="crdGrid"></div>
+      <div class="row">
+        <button class="needbot" id="cGet">현재값 가져오기</button>
+        <button class="needbot primary" id="cGo">좌표로 이동</button>
+      </div>
+      <div class="hint">좌표 이동은 로봇이 경로를 계산해요. 닿지 않는 위치면 움직이지 않을 수 있어요.</div>
+    </div>
+    <div class="warn">⚠️ 조작 전에 주변을 비워 주세요. 웍 로봇(로봇2)은 웍 공구가 달려 있으면 테이블·화구에 부딪히지 않게 속도를 낮춰서 움직이세요. 멈추기: 위쪽 ■ 정지 또는 Esc.</div>
+  </section>
+</div>
+
+<main id="tabMotion" style="display:none">
+  <section class="panel list">
+    <h2>동작 <span class="hint">· 체크하면 여러 개 이어서 재생</span></h2>
+    <div id="items"></div>
+    <div class="hint" style="padding:10px 14px">목록은 <code>motions/</code> 폴더 · <a href="#" id="reload">새로고침</a></div>
+    <div class="hint" style="padding:0 14px 14px">동작 파일 올리기 (주피터 등에서 만든 .json)<br>
+      <input type="file" id="upload" accept=".json" multiple style="margin-top:6px;max-width:100%"></div>
+  </section>
+
+  <section class="panel detail" id="detail">
+    <h3 id="dname">동작을 고르세요</h3>
+    <div class="meta" id="dmeta"></div>
+    <div class="row" style="margin:10px 0 4px">
+      <a id="dl" href="#" download class="dlbtn">⬇ 동작 파일 다운로드 <span>.json</span></a>
+      <span class="hint">주피터 등에서 쓰거나 다른 사람에게 전달할 때</span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <svg id="graph" viewBox="0 0 900 260" width="100%" preserveAspectRatio="none" role="img" aria-label="관절 각도 그래프"></svg>
+
+    <div class="box" id="v3box">
+      <h4>3D 미리보기 <span class="hint">· 브라우저에서 바로 (설치 필요 없음) · 마우스: 왼쪽 돌리기 · 오른쪽 옮기기 · 휠 확대</span></h4>
+      <canvas id="v3" style="width:100%;height:440px;display:block;border-radius:8px;margin-top:8px;touch-action:none"></canvas>
+      <div class="row">
+        <button class="primary" id="v3play" style="min-width:90px">▶ 재생</button>
+        <input type="range" id="v3time" min="0" max="1000" value="0" style="flex:1">
+        <span id="v3lab" class="hint" style="min-width:110px;text-align:right">0.0 / 0.0초</span>
+        <label><input type="checkbox" id="v3loop" checked> 반복</label>
+      </div>
+      <div class="hint" id="v3msg"></div>
+    </div>
+
+    <div class="row">
+      <label>재생 속도
+        <select id="rate">
+          <option value="0.25">0.25배 (아주 천천히)</option>
+          <option value="0.5">0.5배</option>
+          <option value="0.75">0.75배</option>
+          <option value="1" selected>1배 (원래 속도)</option>
+        </select></label>
+      <label>RViz 맵
+        <select id="scene"><option value="">동작에 맞는 맵 (기본)</option><option value="robot">맵 없이 로봇 + 그리퍼</option></select></label>
+      <label>로봇 자리
+        <select id="mount"><option value="">동작에 맞게 (기본)</option><option value="robot1">로봇1 (튀김기 앞)</option><option value="robot2">로봇2 (웍 앞)</option></select></label>
+      <span class="hint" id="playwhat"></span>
+    </div>
+
+    <div class="grid2">
+      <div class="box">
+        <h4>RViz 에서 보기</h4>
+        <div class="hint" id="rvizhint">로봇 없이 모양 확인 · 내 컴퓨터에 RViz 창이 열림</div>
+        <div class="row">
+          <button class="primary" id="bviz">▶ RViz (내 컴퓨터)</button>
+          <label><input type="checkbox" id="loop"> 반복</label>
+          <button id="bvizstop">RViz 닫기</button>
+        </div>
+        <details id="rvizsetup" class="hint" style="display:none">
+          <summary>처음이면: 내 컴퓨터에 RViz 재생기 설치 (한 번만)</summary>
+          <div style="margin-top:6px">터미널에 붙여넣기 <button id="bcopy" style="padding:1px 8px">복사</button><br>
+            <code id="installcmd" style="user-select:all;word-break:break-all"></code><br>
+            또는 <a href="/rviz_install.sh">설치 파일 받기</a> → 우클릭 → 프로그램으로 실행.<br>
+            설치 후 이 페이지를 새로고침. 버튼을 처음 누르면 브라우저가 '열기'를 물어봅니다 (항상 허용 체크).<br>
+            ROS2 Jazzy 가 설치된 컴퓨터에서만 됩니다.</div>
+        </details>
+      </div>
+      <div class="box">
+        <h4>실제 로봇</h4>
+        <div class="hint">시작 자세로 천천히 이동한 다음 재생</div>
+        <div class="row">
+          <button class="primary" id="breal">▶ 실제 로봇 재생</button>
+          <button class="stop" id="bstop">■ 정지</button>
+        </div>
+      </div>
+    </div>
+    <div class="warn" id="toolwarn">⚠️ 웍 로봇 동작은 <b>세로 꽂기 웍 공구</b>가 손목에 달려 있어야 합니다. 그리퍼 상태로 재생하면 화구·테이블에 부딪힐 수 있어요.</div>
+
+    <div class="box">
+      <h4>손으로 따기 → 공유 폴더에 저장</h4>
+      <div class="hint">서보가 풀립니다. 팔을 손으로 받친 채 시작 · 3초 뒤부터 기록</div>
+      <div class="row">
+        <input id="recname" placeholder="새 동작 이름" style="flex:1;min-width:200px">
+        <input id="recby" placeholder="만든 사람" style="width:110px">
+        <button id="brec">● 녹화 시작</button>
+        <button id="brecstop" disabled>■ 녹화 끝</button>
+      </div>
+    </div>
+
+    <div class="box">
+      <h4>상태 · 메모</h4>
+      <div class="row">
+        <select id="status"><option>시험</option><option>확정</option><option>보류</option></select>
+        <input id="notes" placeholder="메모" style="flex:1;min-width:200px">
+        <button id="bsave">저장</button>
+        <button id="bdel" title="motions_trash 폴더로 옮김">🗑 삭제</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="panel" id="log" style="margin-top:0"></div>
+
+<script type="importmap">{"imports": {"three": "/vendor/three.module.js"}}</script>
+<script type="module">
+  import { Viewer } from '/viewer3d.js';
+  window.Viewer3D = Viewer;
+  window.dispatchEvent(new Event('viewer3d-ready'));
+</script>
+<script>
+const $ = id => document.getElementById(id);
+const COLORS = [1,2,3,4,5,6].map(i => getComputedStyle(document.documentElement).getPropertyValue('--c' + i).trim());
+let motions = [], sel = null, checked = new Set(), logSince = 0, st = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {});
+  if (r.status === 401) { location.reload(); return {}; }
+  const j = await r.json();
+  if (j.ok === false) alert(j.error);
+  return j;
+}
+
+async function loadMotions() {
+  motions = await api('/api/motions');
+  if (!sel || !motions.find(m => m.file === sel)) sel = motions.length ? motions[0].file : null;
+  checked = new Set([...checked].filter(f => motions.find(m => m.file === f)));
+  renderList(); renderDetail();
+}
+
+function renderList() {
+  const groups = [['확정', motions.filter(m => m.status === '확정')], ['시험 · 기타', motions.filter(m => m.status !== '확정')]];
+  $('items').innerHTML = groups.filter(g => g[1].length).map(([g, ms]) =>
+    `<h2>${g}</h2>` + ms.map(m => `
+      <div class="item ${m.file === sel ? 'sel' : ''}" data-f="${m.file}">
+        <input type="checkbox" ${checked.has(m.file) ? 'checked' : ''} data-c="${m.file}" title="이어서 재생에 넣기">
+        <div><div class="nm">${esc(m.name)}<span class="badge ${m.status === '확정' ? '' : 't'}">${esc(m.status)}</span></div>
+        <div class="sub">${m.dur.toFixed(1)}초 · ${esc(m.robot)}</div></div>
+      </div>`).join('')).join('');
+  document.querySelectorAll('.item').forEach(el => el.onclick = e => {
+    if (e.target.dataset.c) return;
+    sel = el.dataset.f; renderList(); renderDetail();
+  });
+  document.querySelectorAll('[data-c]').forEach(el => el.onchange = () => {
+    el.checked ? checked.add(el.dataset.c) : checked.delete(el.dataset.c); updatePlayWhat(); prep3d();
+  });
+}
+
+function playList() {
+  if (checked.size) return motions.filter(m => checked.has(m.file)).map(m => m.file);
+  return sel ? [sel] : [];
+}
+function updatePlayWhat() {
+  const l = playList();
+  $('playwhat').textContent = l.length > 1 ? `체크한 ${l.length}개를 이어서 재생` : '';
+}
+
+function renderDetail() {
+  const m = motions.find(x => x.file === sel);
+  if (!m) { $('dname').textContent = '동작이 없습니다'; return; }
+  $('dname').textContent = m.name;
+  $('dmeta').innerHTML = `${m.dur.toFixed(1)}초 · ${m.n}점 · ${esc(m.robot)}` + (m.scene ? ` · 맵: ${esc(m.scene)} (${esc(m.mount)})` : '') + ` · 만든 방법: ${esc(m.made_by)}`
+    + (m.author ? ` · ${esc(m.author)}` : '') + (m.created ? ` · ${esc(m.created)}` : '');
+  $('status').value = ['시험', '확정', '보류'].includes(m.status) ? m.status : '시험';
+  $('notes').value = m.notes || '';
+  $('toolwarn').style.display = /웍|로봇2|aab4/.test(m.name + m.robot) ? '' : 'none';
+  $('dl').href = '/motions/' + encodeURIComponent(m.file);
+  drawGraph(m); updatePlayWhat(); prep3d();
+}
+
+function drawGraph(m) {
+  const W = 900, H = 260, L = 44, R = 10, T = 10, B = 26;
+  const pts = m.points, t1 = m.dur || 1;
+  let lo = Infinity, hi = -Infinity;
+  pts.forEach(p => p.slice(1).forEach(a => { lo = Math.min(lo, a); hi = Math.max(hi, a); }));
+  const pad = Math.max(5, (hi - lo) * 0.08); lo -= pad; hi += pad;
+  const x = t => L + (W - L - R) * t / t1, y = a => T + (H - T - B) * (hi - a) / (hi - lo);
+  let s = '';
+  const stepA = niceStep((hi - lo) / 5), stepT = niceStep(t1 / 8);
+  for (let a = Math.ceil(lo / stepA) * stepA; a <= hi; a += stepA)
+    s += `<line x1="${L}" x2="${W - R}" y1="${y(a)}" y2="${y(a)}" stroke="currentColor" opacity=".08"/><text x="${L - 6}" y="${y(a) + 4}" text-anchor="end">${Math.round(a)}°</text>`;
+  for (let t = 0; t <= t1 + 1e-6; t += stepT)
+    s += `<text x="${x(t)}" y="${H - 6}" text-anchor="middle">${+t.toFixed(1)}s</text>`;
+  for (let j = 1; j <= 6; j++)
+    s += `<polyline fill="none" stroke="${COLORS[j - 1]}" stroke-width="2" stroke-linejoin="round" points="${pts.map(p => x(p[0]).toFixed(1) + ',' + y(p[j]).toFixed(1)).join(' ')}"/>`;
+  s += `<line id="gcur" x1="${L}" x2="${L}" y1="${T}" y2="${H - B}" stroke="var(--stop)" stroke-width="1.5" style="display:none"/>`;
+  $('graph').innerHTML = s;
+  $('legend').innerHTML = COLORS.map((c, i) => `<span><i style="background:${c}"></i>J${i + 1}</span>`).join('');
+}
+function niceStep(r) { const p = Math.pow(10, Math.floor(Math.log10(r))); return [1, 2, 5, 10].map(k => k * p).find(v => v >= r); }
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
+
+async function poll() {
+  try {
+    st = await api('/api/status?since=' + logSince);
+    const r = st.robot;
+    if ($('scene').options.length === 2 && st.scenes.length) {
+      st.scenes.forEach(x => $('scene').insertAdjacentHTML('beforeend', `<option value="${x.name}">${esc(x.label || x.name)}</option>`));
+    }
+    if (!$('host').options.length) {
+      $('host').innerHTML = st.robots.map(x => `<option value="${x.alias}">${x.alias}${x.alias.includes('aab4') ? ' (웍 로봇)' : ''}</option>`).join('')
+        + '<option value="__other">다른 주소…</option>';
+    }
+    $('rdot').className = 'dot ' + (r.connected ? 'on' : r.link ? 'mid' : '');
+    const hn = r.host;
+    $('rstate').textContent = r.connected ? `${hn} 연결됨${r.busy ? ' · ' + r.busy : ''}` : r.link ? `${hn} 접속 중…` : '로봇 연결 안 됨';
+    $('bconn').textContent = r.link ? '연결 끊기' : '연결';
+    $('breal').disabled = !r.connected || !!r.busy;
+    $('brec').disabled = !r.connected || !!r.busy;
+    $('brecstop').disabled = !r.recording;
+    $('bvizstop').disabled = st.local && !st.rviz;
+    const box = $('log'), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+    st.log.forEach(([n, k, t]) => { const d = document.createElement('div'); d.className = k; d.textContent = t; box.appendChild(d); logSince = n + 1; });
+    if (atEnd) box.scrollTop = box.scrollHeight;
+    if (st.log.some(l => /저장했습니다|고침:|지움 \(/.test(l[2]))) loadMotions();
+    if (st.log.some(l => /자세 (저장|지움)/.test(l[2]))) loadPoses();
+    updateCtl();
+    if (st.local && st.urls.length) {
+      $('share').innerHTML = '팀원: ' + st.urls.filter(u => !u.dev.startsWith('tailscale')).map(u => `<code>${u.url}</code>`).join(' ') + ` · 코드 <b>${esc(st.code)}</b>`;
+    } else if (!st.local && $('rvizsetup').style.display === 'none') {
+      $('rvizsetup').style.display = '';
+      $('installcmd').textContent = `curl -fsS '${location.origin}/rviz_install.sh?code=${getCode()}' | bash`;
+    }
+  } catch (e) { $('rstate').textContent = '플레이어 서버가 꺼졌습니다'; }
+}
+
+$('bconn').onclick = () => {
+  if (st && st.robot.link) return api('/api/robot/disconnect', {});
+  let h = $('host').value;
+  if (h === '__other') { h = prompt('로봇 주소 (ssh 별칭 또는 user@IP)', 'jetcobot@192.168.0.21'); if (!h) return; }
+  api('/api/robot/connect', {host: h});
+};
+const stop = () => api('/api/robot/stop', {});
+$('bstop').onclick = stop; $('bstopTop').onclick = stop;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') stop(); });
+function getCode() { const m = document.cookie.match(/player_code=([^;]+)/); return m ? m[1] : ''; }
+function openLink(u) { const a = document.createElement('a'); a.href = u; document.body.appendChild(a); a.click(); a.remove(); }
+$('bviz').onclick = () => {
+  const l = playList(); if (!l.length) return;
+  if (st && st.local) return api('/api/rviz/play', {files: l, rate: +$('rate').value, loop: $('loop').checked, scene: $('scene').value, mount: $('mount').value});
+  openLink('jetcobot-rviz://play?' + new URLSearchParams([['rate', $('rate').value], ['loop', $('loop').checked ? 1 : 0], ['scene', $('scene').value], ['mount', $('mount').value], ...l.map(f => ['f', f])]));
+  api('/api/rviz/note', {files: l});
+};
+$('bvizstop').onclick = () => (st && st.local) ? api('/api/rviz/stop', {}) : openLink('jetcobot-rviz://stop');
+$('bcopy').onclick = () => navigator.clipboard.writeText($('installcmd').textContent);
+$('breal').onclick = () => {
+  const l = playList(); if (!l.length) return;
+  const names = motions.filter(m => l.includes(m.file)).map(m => m.name).join('\n');
+  if (confirm(`실제 로봇으로 재생합니다 (×${$('rate').value})\n\n${names}\n\n주변을 비웠나요?`))
+    api('/api/robot/play', {files: l, rate: +$('rate').value});
+};
+$('brec').onclick = () => {
+  if (!$('recname').value.trim()) return alert('새 동작 이름을 적어 주세요.');
+  if (confirm('서보가 풀립니다. 팔을 손으로 받치고 있나요?'))
+    api('/api/robot/record_start', {name: $('recname').value, author: $('recby').value});
+};
+$('brecstop').onclick = () => { api('/api/robot/record_stop', {}); $('recname').value = ''; };
+$('bsave').onclick = () => api('/api/motion/update', {file: sel, status: $('status').value, notes: $('notes').value});
+$('upload').onchange = async e => {
+  for (const f of e.target.files) {
+    const j = await api('/api/motion/upload', {filename: f.name, content: await f.text()});
+    if (j.ok) sel = null;
+  }
+  e.target.value = ''; loadMotions();
+};
+$('bdel').onclick = async () => {
+  const m = motions.find(x => x.file === sel); if (!m) return;
+  if (!confirm(`'${m.name}' 동작을 지울까요?\n\n(휴지통 폴더 motions_trash 로 옮겨져서 나중에 되살릴 수 있어요)`)) return;
+  const j = await api('/api/motion/delete', {file: sel});
+  if (j.ok) { checked.delete(sel); sel = null; loadMotions(); }
+};
+$('bregOpen').onclick = () => { $('regbox').style.display = $('regbox').style.display === 'none' ? '' : 'none'; };
+$('bregClose').onclick = () => { $('regbox').style.display = 'none'; };
+$('breg').onclick = async () => {
+  $('breg').disabled = true; $('breg').textContent = '등록 중…';
+  const j = await api('/api/robot/register', {alias: $('regAlias').value, ip: $('regIp').value, user: $('regUser').value, password: $('regPw').value});
+  $('regPw').value = ''; $('breg').disabled = false; $('breg').textContent = '등록';
+  if (j.ok) {
+    $('host').innerHTML = ''; await poll();          // 로봇 목록 새로
+    $('host').value = j.robot.alias; $('regbox').style.display = 'none';
+    alert(`${j.robot.alias} 등록 완료. '연결'을 누르면 됩니다.`);
+  }
+};
+// ───── 탭 ─────
+function showTab(t) {
+  $('tabMotion').style.display = t === 'm' ? '' : 'none';
+  $('tabCtl').style.display = t === 'c' ? '' : 'none';
+  $('tabBtnMotion').classList.toggle('on', t === 'm'); $('tabBtnCtl').classList.toggle('on', t === 'c');
+  location.hash = t === 'm' ? 'anim' : '';
+}
+$('tabBtnMotion').onclick = () => showTab('m'); $('tabBtnCtl').onclick = () => showTab('c');
+if (location.hash === '#anim') showTab('m');
+
+// ───── 조작 ─────
+const AMIN = [-168, -135, -150, -145, -165, -180], AMAX = [168, 135, 150, 145, 165, 180];
+const CN = ['x', 'y', 'z', 'rx', 'ry', 'rz'], CMIN = [-350, -350, -100, -180, -180, -180], CMAX = [350, 350, 550, 180, 180, 180];
+function makeGrid(id, names, lo, hi, step) {
+  $(id).innerHTML = names.map((n, i) => `<label>${n}<input type="number" step="${step}" min="${lo[i]}" max="${hi[i]}" value="0" data-i="${i}">
+    <input type="range" step="1" min="${lo[i]}" max="${hi[i]}" value="0" data-r="${i}"></label>`).join('');
+  $(id).querySelectorAll('[data-r]').forEach(r => r.oninput = () => { $(id).querySelector(`[data-i="${r.dataset.r}"]`).value = r.value; });
+  $(id).querySelectorAll('[data-i]').forEach(n => n.oninput = () => { $(id).querySelector(`[data-r="${n.dataset.i}"]`).value = n.value; });
+}
+makeGrid('angGrid', ['J1', 'J2', 'J3', 'J4', 'J5', 'J6'], AMIN, AMAX, 1);
+makeGrid('crdGrid', CN, CMIN, CMAX, 5);
+const gridVals = id => [...$(id).querySelectorAll('[data-i]')].map(x => +x.value);
+const setGrid = (id, v) => v && v.forEach((x, i) => { $(id).querySelector(`[data-i="${i}"]`).value = x; $(id).querySelector(`[data-r="${i}"]`).value = x; });
+const spd = () => +$('cspeed').value;
+$('cspeed').oninput = () => $('cspeedv').textContent = $('cspeed').value;
+$('gval').oninput = () => $('gvalv').textContent = $('gval').value;
+const cmd = (c, extra = {}) => api('/api/robot/cmd', {cmd: c, speed: spd(), ...extra});
+document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => {
+  if (b.dataset.cmd === 'release' && !confirm('서보가 풀리면 팔이 처질 수 있어요. 팔을 손으로 받치고 있나요?')) return;
+  cmd(b.dataset.cmd);
+});
+async function freshState() {             // 상태를 새로 읽고 올 때까지 기다림
+  const t0 = st && st.robot.state_t || 0;
+  await cmd('state');
+  for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 150)); await poll(); if (st.robot.state_t > t0) return st.robot; }
+  alert('상태를 못 읽었어요. 로봇 연결을 확인하세요.'); return null;
+}
+$('aGet').onclick = async () => { const r = await freshState(); if (r) setGrid('angGrid', r.angles); };
+$('cGet').onclick = async () => { const r = await freshState(); if (r) setGrid('crdGrid', r.coords); };
+$('aGo').onclick = () => cmd('angles', {values: gridVals('angGrid')});
+$('cGo').onclick = () => cmd('coords', {values: gridVals('crdGrid')});
+$('aFront').onclick = () => confirm(`[${gridVals('angGrid')}] 를 이 로봇의 정면 대기로 저장할까요?`) && api('/api/robot/front_save', {values: gridVals('angGrid')});
+$('gOpen').onclick = () => cmd('gripper', {value: 100});
+$('gClose').onclick = () => cmd('gripper', {value: 0});
+$('gApply').onclick = () => cmd('gripper', {value: +$('gval').value});
+setInterval(() => { if ($('live').checked && st && st.robot.connected && !st.robot.busy && $('tabCtl').style.display === '') cmd('state'); }, 1000);
+
+let poses = [], pickOrder = [];
+async function loadPoses() { poses = await api('/api/poses'); loadPosesView(); }
+function loadPosesView() {
+  pickOrder = pickOrder.filter(n => poses.some(p => p.name === n));
+  $('poseList').innerHTML = poses.length ? poses.map((p, i) => `<div><input type="checkbox" data-pick="${i}" ${pickOrder.includes(p.name) ? 'checked' : ''}>
+    <span class="badge" style="min-width:18px;text-align:center">${pickOrder.includes(p.name) ? pickOrder.indexOf(p.name) + 1 : ''}</span><b>${esc(p.name)}</b><code>[${p.angles.join(', ')}]</code>
+    <button class="needbot" data-pgo="${i}">이동</button><button data-pset="${i}" title="각도 칸에 넣기">칸에</button><button data-pdel="${i}">삭제</button></div>`).join('')
+    : '<div class="hint">아직 없음</div>';
+  $('poseList').querySelectorAll('[data-pick]').forEach(b => b.onchange = () => {
+    const n = poses[b.dataset.pick].name;
+    pickOrder = b.checked ? [...pickOrder, n] : pickOrder.filter(x => x !== n); loadPosesView();
+  });
+  $('pOrder').textContent = pickOrder.length ? '순서: ' + pickOrder.join(' → ') : '';
+  $('poseList').querySelectorAll('[data-pgo]').forEach(b => b.onclick = () => cmd('angles', {values: poses[b.dataset.pgo].angles}));
+  $('poseList').querySelectorAll('[data-pset]').forEach(b => b.onclick = () => setGrid('angGrid', poses[b.dataset.pset].angles));
+  $('poseList').querySelectorAll('[data-pdel]').forEach(b => b.onclick = async () => {
+    if (confirm(`'${poses[b.dataset.pdel].name}' 자세를 지울까요?`)) { await api('/api/pose/delete', {name: poses[b.dataset.pdel].name}); loadPoses(); } });
+  updateCtl();
+}
+$('bPoseMotion').onclick = async () => {
+  if (pickOrder.length < 2) return alert('자세를 2개 이상 체크해 주세요 (체크한 순서대로 이어요).');
+  const j = await api('/api/motion/from_poses', {name: $('pMotion').value, poses: pickOrder, seg: +$('pSeg').value, hold: +$('pHold').value});
+  if (j.ok) { $('pMotion').value = ''; pickOrder = []; loadPosesView(); await loadMotions(); alert('동작으로 저장했어요. 애니메이션 탭에서 재생해 보세요.'); }
+};
+$('bPoseSave').onclick = async () => {
+  if (!$('poseName').value.trim()) return alert('자세 이름을 적어 주세요.');
+  const r = await freshState(); if (!r) return;
+  await api('/api/pose/save', {name: $('poseName').value, values: r.angles}); $('poseName').value = ''; loadPoses();
+};
+$('bPoseCode').onclick = () => {
+  const code = '# 기록한 자세 (pymycobot)\n' + poses.map(p => `mc.send_angles(${JSON.stringify(p.angles)}, 20)   # ${p.name}\ntime.sleep(3)`).join('\n');
+  navigator.clipboard.writeText(code); alert('복사했어요.');
+};
+function updateCtl() {
+  const on = st && st.robot.connected;
+  document.querySelectorAll('.needbot').forEach(b => b.disabled = !on);
+  if (st && st.robot.front) $('bFront').textContent = `정면 대기 [J6 ${st.robot.front[5]}°]`;
+  if (st && st.robot.angles && Array.isArray(st.robot.angles)) {
+    const row = (h, v) => `<tr><th>${h}</th>` + (Array.isArray(v) ? v.map(x => `<td>${(+x).toFixed(1)}</td>`).join('') : '<td colspan=6>-</td>') + '</tr>';
+    $('readout').innerHTML = `<table style="width:100%;border-collapse:collapse;text-align:right"><tr><th></th>${[1,2,3,4,5,6].map(i => `<th style="color:var(--muted);font-weight:400">${i}</th>`).join('')}</tr>`
+      + row('각도', st.robot.angles) + row('좌표', st.robot.coords) + '</table>' + (st.robot.grip != null ? `<div>그리퍼 ${st.robot.grip}</div>` : '');
+  }
+}
+loadPoses();
+
+// ───── 브라우저 3D ─────
+const JN = ['joint2_to_joint1', 'joint3_to_joint2', 'joint4_to_joint3', 'joint5_to_joint4', 'joint6_to_joint5', 'joint6output_to_joint6'];
+let v3 = null, v3key = '', v3names = JN, v3rest = {}, tl = null, v3t = 0, v3on = false, v3last = 0, v3busy = false;
+function buildTimeline() {             // 체크한 동작들을 이어 붙임 (사이 0.5초 머무름 + 1초 이동)
+  const ms = playList().map(f => motions.find(m => m.file === f)).filter(Boolean);
+  if (!ms.length) return null;
+  const t = [], a = [];
+  ms.forEach(m => {
+    const off = t.length ? t[t.length - 1] + 1.5 : 0;
+    if (t.length) { t.push(off - 1.0); a.push(a[a.length - 1]); }
+    m.points.forEach(p => { t.push(off + p[0]); a.push(p.slice(1)); });
+  });
+  return {t, a, dur: t[t.length - 1], first: ms[0]};
+}
+function poseAt(time) {
+  const {t, a} = tl; if (time <= t[0]) return a[0]; if (time >= tl.dur) return a[a.length - 1];
+  let lo = 0, hi = t.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (t[mid] <= time) lo = mid; else hi = mid; }
+  const f = (time - t[lo]) / Math.max(t[hi] - t[lo], 1e-6);
+  return a[lo].map((x, i) => x + (a[hi][i] - x) * f);
+}
+function show3d() {
+  if (!v3 || !tl) return;
+  const p = poseAt(v3t), vals = {...v3rest};
+  v3names.forEach((n, i) => vals[n] = p[i] * Math.PI / 180);
+  v3.setJoints(vals);
+  $('v3time').value = Math.round(1000 * v3t / Math.max(tl.dur, 1e-6));
+  $('v3lab').textContent = `${v3t.toFixed(1)} / ${tl.dur.toFixed(1)}초`;
+  const cur = $('graph').querySelector('#gcur');
+  if (cur && tl.first.file === sel && playList().length === 1) { const x = 44 + (900 - 54) * v3t / (tl.first.dur || 1); cur.setAttribute('x1', x); cur.setAttribute('x2', x); cur.style.display = ''; }
+  else if (cur) cur.style.display = 'none';
+}
+async function prep3d() {
+  if (!window.Viewer3D || $('tabMotion').style.display === 'none') return;
+  if (!v3) v3 = new window.Viewer3D($('v3'));
+  tl = buildTimeline(); if (!tl) return;
+  const m = tl.first, scene = $('scene').value || m.scene || 'robot';
+  let mount = $('mount').value || m.mount || 'robot2';
+  const key = scene + '|' + mount;
+  if (key !== v3key && !v3busy) {
+    v3busy = true; $('v3msg').textContent = '3D 모델 불러오는 중…';
+    try {
+      if (scene === 'robot') {
+        await v3.load('/model/robot/mycobot280_gripper.urdf', '/model/robot/');
+        v3names = JN; v3rest = {};
+      } else {
+        const info = await (await fetch(`/model/scenes/${scene}/scene.json`)).json();
+        await v3.load(`/model/scenes/${scene}/scene.urdf`, `/model/scenes/${scene}/`, {target: [0.55, 0.38, 0.05], eye: [0.25, -0.62, 0.78]});
+        if (!info.joints[mount]) mount = info.mounts[info.mounts.length - 1];
+        v3names = info.joints[mount]; v3rest = {};
+        Object.entries(info.joints).forEach(([k, js]) => { if (k !== mount) js.forEach(j => v3rest[j] = 0); });
+      }
+      v3key = key; $('v3msg').textContent = scene === 'robot' ? '로봇 + 그리퍼' : `맵: ${scene} · ${mount}`;
+    } catch (e) { $('v3msg').textContent = '3D 모델을 못 불러왔어요: ' + e; }
+    v3busy = false;
+  }
+  const qt = new URLSearchParams(location.search).get('t');   // ?t=초 → 그 순간 자세로 (링크 공유용)
+  if (qt !== null && !window._qtUsed) { window._qtUsed = true; v3t = +qt; }
+  v3t = Math.min(v3t, tl.dur); show3d();
+}
+function v3frame(now) {
+  if (v3on && tl) {
+    v3t += (now - v3last) / 1000 * +$('rate').value;
+    if (v3t >= tl.dur) { if ($('v3loop').checked) v3t = 0; else { v3t = tl.dur; v3on = false; $('v3play').textContent = '▶ 재생'; } }
+    show3d();
+  }
+  v3last = now; requestAnimationFrame(v3frame);
+}
+requestAnimationFrame(v3frame);
+$('v3play').onclick = () => { if (!tl) return; v3on = !v3on; if (v3on && v3t >= tl.dur) v3t = 0; $('v3play').textContent = v3on ? '❚❚ 멈춤' : '▶ 재생'; };
+$('v3time').oninput = () => { if (!tl) return; v3on = false; $('v3play').textContent = '▶ 재생'; v3t = tl.dur * $('v3time').value / 1000; show3d(); };
+['scene', 'mount'].forEach(id => $(id).addEventListener('change', prep3d));
+window.addEventListener('viewer3d-ready', prep3d);
+$('tabBtnMotion').addEventListener('click', () => setTimeout(prep3d, 50));
+
+$('reload').onclick = e => { e.preventDefault(); loadMotions(); };
+
+loadMotions(); poll(); setInterval(poll, 500);
+</script>
+</body>
+</html>
